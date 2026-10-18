@@ -1,81 +1,300 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#173d32">
 <title>ALISLAH</title>
+
 <style>
+* { box-sizing: border-box; }
+
 body {
   font-family: Arial, sans-serif;
   background: #f0f7f3;
   color: #173d32;
   margin: 0;
-  padding: 20px;
+  padding: 15px;
 }
+
 header {
   background: #173d32;
   color: white;
-  padding: 20px;
-  border-radius: 15px;
+  padding: 24px 12px;
+  border-radius: 18px;
   text-align: center;
 }
+
+header h1 { margin: 0 0 8px; }
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 15px 0;
+}
+
+nav button {
+  flex: 1;
+  min-width: 90px;
+}
+
 .card {
   background: white;
   padding: 18px;
-  margin-top: 15px;
+  margin: 14px 0;
   border-radius: 15px;
+  box-shadow: 0 3px 10px #173d3210;
 }
+
+h2 { font-size: 20px; }
+
 button {
   background: #176b50;
   color: white;
   border: 0;
   border-radius: 9px;
+  padding: 12px 15px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+input {
+  width: 100%;
   padding: 12px;
-  margin: 5px;
+  border: 1px solid #b8cec3;
+  border-radius: 9px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.task {
+  background: #f0f7f3;
+  padding: 10px;
+  margin-top: 8px;
+  border-radius: 9px;
+  overflow-wrap: anywhere;
+}
+
+.delete { background: #a83232; }
+
+[hidden] { display: none !important; }
+
+footer {
+  text-align: center;
+  padding: 20px;
+  color: #527365;
 }
 </style>
 </head>
+
 <body>
+
 <header>
-  <h1>ALISLAH</h1>
+  <h1>🌿 ALISLAH</h1>
   <p>رفيقك نحو يوم أفضل</p>
+  <p id="today"></p>
 </header>
 
-<div class="card">
-  <h2>🧠 تحسين السلوك</h2>
-  <p>ابدأ اليوم بعادة نافعة.</p>
-  <button onclick="alert('اختر عادة صغيرة وداوم عليها يوميًا')">
-    نصيحة اليوم
-  </button>
-</div>
+<nav>
+  <button onclick="showSection('home')">🏠 الرئيسية</button>
+  <button onclick="showSection('habits')">🧠 السلوك</button>
+  <button onclick="showSection('time')">⏰ الوقت</button>
+  <button onclick="showSection('family')">🛡️ الأسرة</button>
+  <button onclick="showSection('helper')">💡 المساعد</button>
+</nav>
 
-<div class="card">
-  <h2>⏰ تنظيم الوقت</h2>
-  <p>حدد مهمة تريد إنجازها اليوم.</p>
-  <input id="task" placeholder="اكتب مهمتك هنا">
-  <button onclick="addTask()">إضافة المهمة</button>
-  <p id="result"></p>
-</div>
+<main>
+<section id="home">
+  <div class="card">
+    <h2>🌸 أهلاً بك في ALISLAH</h2>
+    <p>خطوات صغيرة اليوم تصنع فرقاً كبيراً غداً.</p>
+    <p>مهامك المنجزة: <strong id="count">0</strong></p>
+    <button onclick="showSection('time')">ابدئي تنظيم يومك</button>
+  </div>
 
-<div class="card">
-  <h2>🛡️ حماية الأطفال</h2>
-  <p>ذكّر طفلك بعدم مشاركة معلوماته الشخصية مع الغرباء.</p>
-</div>
+  <div class="card">
+    <h2>✨ نصيحة اليوم</h2>
+    <p id="advice"></p>
+    <button onclick="newAdvice()">نصيحة أخرى</button>
+  </div>
+</section>
 
-<div class="card">
-  <h2>🤖 المساعد الذكي</h2>
-  <p>قريبًا: مساعد عربي لتنظيم العادات والوقت.</p>
-</div>
+<section id="habits" hidden>
+  <div class="card">
+    <h2>🧠 تحسين السلوك والعادات</h2>
+    <p>اختاري عادة نافعة وابدئي بخطوة بسيطة.</p>
+    <ul>
+      <li>خصصي وقتاً للقراءة كل يوم.</li>
+      <li>تحدثي بهدوء عند الغضب.</li>
+      <li>حافظي على ترتيب مكانك.</li>
+      <li>اشكري نفسك على كل تقدم.</li>
+    </ul>
+    <button onclick="alert('ابدئي بخطوة صغيرة وواصلي يومياً 🌱')">
+      تشجيع وتحفيز
+    </button>
+  </div>
+</section>
+
+<section id="time" hidden>
+  <div class="card">
+    <h2>⏰ تنظيم الوقت والمهام</h2>
+    <p>اكتبي مهمة تريدين إنجازها.</p>
+    <input id="task" maxlength="200"
+      placeholder="مثلاً: قراءة 10 صفحات">
+
+    <button onclick="addTask()">إضافة المهمة</button>
+    <p id="message" role="status"></p>
+    <div id="tasks"></div>
+  </div>
+</section>
+
+<section id="family" hidden>
+  <div class="card">
+    <h2>🛡️ حماية الأطفال والأسرة</h2>
+    <ul>
+      <li>لا تشاركي كلمات المرور مع الغرباء.</li>
+      <li>لا ترسلي العنوان أو معلوماتك الخاصة لأشخاص مجهولين.</li>
+      <li>أخبري شخصاً بالغاً موثوقاً عند التعرض لموقف مقلق.</li>
+      <li>خصصي وقتاً يومياً للحوار مع أطفالك.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="helper" hidden>
+  <div class="card">
+    <h2>💡 المساعد الإرشادي</h2>
+    <p>اختاري ما تحتاجين المساعدة فيه:</p>
+    <button onclick="help('time')">تنظيم الوقت</button>
+    <button onclick="help('habit')">بناء عادة</button>
+    <button onclick="help('stress')">التعامل مع التوتر</button>
+    <p id="helpResult" aria-live="polite"></p>
+    <p>هذا مساعد إرشادي بسيط، وليس اتصالاً بخدمة ذكاء اصطناعي.</p>
+  </div>
+</section>
+</main>
+
+<footer>ALISLAH © 2026 — خطوة نحو الأفضل 🌱</footer>
 
 <script>
-function addTask() {
-  let task = document.getElementById('task').value.trim();
-  if (task) {
-    document.getElementById('result').textContent =
-      'مهمتك اليوم: ' + task;
+const adviceList = [
+  "ابدئي يومك بهدف صغير يمكنك تحقيقه.",
+  "الاستمرار أهم من الكمال.",
+  "خذي استراحة قصيرة عندما تشعرين بالتعب.",
+  "خصصي دقائق قليلة لترتيب أولوياتك.",
+  "لا تقارني تقدمك بتقدم الآخرين."
+];
+
+function showSection(id) {
+  document.querySelectorAll("main section").forEach(section => {
+    section.hidden = section.id !== id;
+  });
+  window.scrollTo(0, 0);
+}
+
+function newAdvice() {
+  const index = Math.floor(Math.random() * adviceList.length);
+  document.getElementById("advice").textContent = adviceList[index];
+}
+
+function getTasks() {
+  try {
+    return JSON.parse(localStorage.getItem("alislah_tasks") || "[]");
+  } catch (e) {
+    return [];
   }
 }
+
+function saveTasks(tasks) {
+  try {
+    localStorage.setItem("alislah_tasks", JSON.stringify(tasks));
+    return true;
+  } catch (e) {
+    document.getElementById("message").textContent =
+      "تعذر الحفظ على هذا الجهاز.";
+    return false;
+  }
+}
+
+function renderTasks() {
+  const tasks = getTasks();
+  const list = document.getElementById("tasks");
+  list.replaceChildren();
+
+  tasks.forEach((task, index) => {
+    const item = document.createElement("div");
+    item.className = "task";
+
+    const label = document.createElement("label");
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = task.done;
+    check.style.width = "auto";
+
+    check.addEventListener("change", () => {
+      const updated = getTasks();
+      updated[index].done = check.checked;
+      if (saveTasks(updated)) renderTasks();
+    });
+
+    label.append(check, document.createTextNode(" " + task.text));
+    if (task.done) label.style.textDecoration = "line-through";
+
+    const del = document.createElement("button");
+    del.className = "delete";
+    del.textContent = "حذف";
+    del.onclick = () => {
+      const updated = getTasks();
+      updated.splice(index, 1);
+      if (saveTasks(updated)) renderTasks();
+    };
+
+    item.append(label, document.createElement("br"), del);
+    list.append(item);
+  });
+
+  document.getElementById("count").textContent =
+    tasks.filter(task => task.done).length;
+}
+
+function addTask() {
+  const input = document.getElementById("task");
+  const message = document.getElementById("message");
+  const text = input.value.trim();
+
+  if (!text) {
+    message.textContent = "اكتبي المهمة أولاً.";
+    return;
+  }
+
+  const tasks = getTasks();
+  tasks.push({ text: text, done: false });
+
+  if (saveTasks(tasks)) {
+    input.value = "";
+    message.textContent = "تمت إضافة المهمة وحفظها بنجاح.";
+    renderTasks();
+  }
+}
+
+function help(type) {
+  const messages = {
+    time: "اكتبي أهم 3 مهام، وابدئي بالأكثر أهمية.",
+    habit: "اختاري عادة واحدة صغيرة وكرريها يومياً.",
+    stress: "توقفي قليلاً، تنفسي ببطء، ثم عودي إلى المهمة بهدوء."
+  };
+
+  document.getElementById("helpResult").textContent = messages[type];
+}
+
+document.getElementById("today").textContent =
+  new Date().toLocaleDateString("ar-DZ", {
+    year: "numeric", month: "long", day: "numeric"
+  });
+
+newAdvice();
+renderTasks();
 </script>
+
 </body>
 </html>
