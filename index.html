@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALISLAH</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f0f7f3;
+  color: #173d32;
+  margin: 0;
+  padding: 20px;
+}
+header {
+  background: #173d32;
+  color: white;
+  padding: 20px;
+  border-radius: 15px;
+  text-align: center;
+}
+.card {
+  background: white;
+  padding: 18px;
+  margin-top: 15px;
+  border-radius: 15px;
+}
+button {
+  background: #176b50;
+  color: white;
+  border: 0;
+  border-radius: 9px;
+  padding: 12px;
+  margin: 5px;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>ALISLAH</h1>
+  <p>رفيقك نحو يوم أفضل</p>
+</header>
+
+<div class="card">
+  <h2>🧠 تحسين السلوك</h2>
+  <p>ابدأ اليوم بعادة نافعة.</p>
+  <button onclick="alert('اختر عادة صغيرة وداوم عليها يوميًا')">
+    نصيحة اليوم
+  </button>
+</div>
+
+<div class="card">
+  <h2>⏰ تنظيم الوقت</h2>
+  <p>حدد مهمة تريد إنجازها اليوم.</p>
+  <input id="task" placeholder="اكتب مهمتك هنا">
+  <button onclick="addTask()">إضافة المهمة</button>
+  <p id="result"></p>
+</div>
+
+<div class="card">
+  <h2>🛡️ حماية الأطفال</h2>
+  <p>ذكّر طفلك بعدم مشاركة معلوماته الشخصية مع الغرباء.</p>
+</div>
+
+<div class="card">
+  <h2>🤖 المساعد الذكي</h2>
+  <p>قريبًا: مساعد عربي لتنظيم العادات والوقت.</p>
+</div>
+
+<script>
+function addTask() {
+  let task = document.getElementById('task').value.trim();
+  if (task) {
+    document.getElementById('result').textContent =
+      'مهمتك اليوم: ' + task;
+  }
+}
+</script>
+</body>
+</html>
