@@ -20,4 +20,58 @@ $('#worker').value=data.settings.worker;$('#name').value=data.settings.name;$('#
 $('#export').onclick=()=>{let b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='alislah-backup-'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};$('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let x=JSON.parse(await f.text());if(!Array.isArray(x.tasks)||!Array.isArray(x.habits))throw 0;if(confirm('استبدال البيانات الحالية بالنسخة المختارة؟')){data={...blank(),...x,settings:{...blank().settings,...x.settings}};save();location.reload()}}catch{toast('الملف غير صالح')}finally{e.target.value=''}};$('#reset').onclick=()=>{if(confirm('سيتم مسح كل بيانات ALISLAH المحفوظة على هذا الجهاز. هل أنتِ متأكدة؟')){localStorage.removeItem(KEY);location.reload()}};
 renderTasks();renderHabits();stats();idea();drawChat();if(data.settings.name)$('#greeting').textContent=`أهلًا ${data.settings.name}، خطوة صغيرة تصنع فرقًا 🌿`;
 })();
+</script><script>
+/* ALISLAH Plus: voice controls and smart-plan shortcut */
+(() => {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const form = $('#chatForm'), text = $('#chatText');
+  if (!form || !text) return;
+
+  const row = document.createElement('div');
+  row.className = 'field';
+  row.style.marginTop = '8px';
+  row.innerHTML = '<button type="button" class="btn soft" id="alislahVoice">🎙️ تحدثي</button> <button type="button" class="btn" id="alislahStop">إيقاف الصوت</button> <label style="display:flex;align-items:center;gap:6px;font-size:.9rem"><input id="alislahRead" type="checkbox" style="width:18px"> قراءة الردود بصوت</label>';
+  form.parentNode.insertBefore(row, form);
+
+  const voice = $('#alislahVoice'), stop = $('#alislahStop'), read = $('#alislahRead');
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec;
+  function say(t) {
+    if (!('speechSynthesis' in window)) { alert('المتصفح لا يدعم قراءة الردود بالصوت.'); return; }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t); u.lang = 'ar'; u.rate = .95;
+    speechSynthesis.speak(u);
+  }
+  voice.onclick = () => {
+    if (!Recognition) { alert('الإملاء الصوتي غير مدعوم هنا. جرّبي Chrome واسمحي بالميكروفون.'); return; }
+    try {
+      rec = new Recognition(); rec.lang = 'ar-DZ'; rec.interimResults = false;
+      voice.disabled = true; voice.textContent = '🎙️ أستمع…';
+      rec.onresult = e => { const t = e.results?.[0]?.[0]?.transcript; if (t) { text.value = (text.value.trim() ? text.value.trim() + ' ' : '') + t; text.focus(); } };
+      rec.onerror = e => { if (e.error === 'not-allowed') alert('اسمحي للمتصفح باستخدام الميكروفون.'); };
+      rec.onend = () => { voice.disabled = false; voice.textContent = '🎙️ تحدثي'; };
+      rec.start();
+    } catch { voice.disabled = false; voice.textContent = '🎙️ تحدثي'; alert('تعذّر تشغيل الميكروفون.'); }
+  };
+  stop.onclick = () => { try { rec?.stop(); } catch {} if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+
+  const messages = $('#messages');
+  if (messages) new MutationObserver(records => {
+    for (const r of records) for (const n of r.addedNodes) {
+      if (n.nodeType === 1 && n.classList.contains('bubble') && n.classList.contains('assistant') && read.checked) say(n.textContent || '');
+    }
+  }).observe(messages, {childList:true});
+
+  const panel = document.createElement('div');
+  panel.className = 'panel'; panel.style.marginTop = '12px';
+  panel.innerHTML = '<h3>✨ خطة ذكية</h3><p class="muted">اطلبي من المساعد خطة يومية، ثم راجعي المهام قبل إضافتها.</p><button type="button" class="btn primary" id="alislahPlan">إنشاء خطة يومية ذكية</button>';
+  const tasks = $('#tasks'); if (tasks) tasks.appendChild(panel);
+  $('#alislahPlan').onclick = () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'assistant'));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'assistant'));
+    text.value = 'أنشئ لي خطة يومية واقعية بالعربية من 4 إلى 6 مهام قصيرة لتنظيم البيت والعناية بالنفس والأسرة. اكتب كل مهمة في سطر مستقل يبدأ بشرطة.';
+    form.requestSubmit();
+  };
+})();
 </script></body></html>
