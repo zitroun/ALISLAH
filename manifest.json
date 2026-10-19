@@ -1,12 +1,33 @@
-
 {
-  "name": "ALISLAH",
+  "id": "./",
+  "name": "ALISLAH | الإصلاح الذكي",
   "short_name": "ALISLAH",
-  "description": "تطبيق عربي لتنظيم الوقت وتحسين السلوك",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#f0f7f3",
-  "theme_color": "#173d32",
+  "description": "رفيقك لتنظيم اليوم والحياة الأسرية",
   "lang": "ar",
-  "dir": "rtl"
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f7f5",
+  "theme_color": "#176b5b",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
