@@ -1,0 +1,32 @@
+
+name: Prepare Android project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip Android source
+        run: |
+          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-source.zip' -print -quit)"
+          if [ -z "$ZIP" ]; then
+            echo "Android ZIP not found in repository"
+            exit 1
+          fi
+          mkdir -p android-project
+          unzip -o "$ZIP" -d android-project
+          find android-project -maxdepth 3 -type f | head -80
+
+      - name: Upload extracted project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALISLAH-Android-project
+          path: android-project/
