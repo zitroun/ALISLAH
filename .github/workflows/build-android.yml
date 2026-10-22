@@ -28,7 +28,7 @@ jobs:
 
       - name: Unpack Android project
         run: |
-          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-event-driven-bubble.zip' -print -quit)"
+          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-event-driven-safe-install.zip' -print -quit)"
           if [ -z "$ZIP" ]; then
             echo "ERROR: Android ZIP not found"
             exit 1
@@ -36,7 +36,7 @@ jobs:
           mkdir -p android-project
           unzip -o "$ZIP" -d android-project
           echo "Extracted project:"
-          find android-project -name build.gradle -o -name settings.gradle
+          find android-project \( -name build.gradle -o -name settings.gradle \) -print
 
       - name: Locate Android project
         id: project
@@ -51,7 +51,6 @@ jobs:
           echo "Android project: $PROJECT_DIR"
 
       - name: Configure Java and Kotlin targets
-        working-directory: .
         env:
           PROJECT_DIR: ${{ steps.project.outputs.dir }}
         run: |
@@ -90,6 +89,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-debug-apk
+          name: ALISLAH-safe-install-apk
           path: android-project/**/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
