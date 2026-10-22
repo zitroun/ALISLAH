@@ -28,7 +28,7 @@ jobs:
 
       - name: Unpack Android project
         run: |
-          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-source.zip' -print -quit)"
+          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-event-driven-bubble.zip' -print -quit)"
           if [ -z "$ZIP" ]; then
             echo "ERROR: Android ZIP not found"
             exit 1
@@ -61,9 +61,9 @@ jobs:
 
           project = Path(os.environ["PROJECT_DIR"])
           gradle_file = project / "app" / "build.gradle"
-          text = gradle_file.read_text()
+          content = gradle_file.read_text()
 
-          if "compileOptions" in text and "VERSION_17" in text:
+          if "compileOptions" in content and "VERSION_17" in content:
               print("Java 17 compile options already present")
           else:
               block = """
@@ -78,7 +78,7 @@ jobs:
               }
           }
           """
-              gradle_file.write_text(text + block)
+              gradle_file.write_text(content + block)
               print("Added Java 17 and Kotlin 17 targets")
           PY
 
