@@ -1,94 +1,39 @@
-
 name: Build ALISLAH Android APK
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2.1'
-
       - name: Unpack Android project
         run: |
-          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-event-driven-safe-install.zip' -print -quit)"
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: Android ZIP not found"
-            exit 1
-          fi
-          mkdir -p android-project
-          unzip -o "$ZIP" -d android-project
-          echo "Extracted project:"
-          find android-project \( -name build.gradle -o -name settings.gradle \) -print
-
-      - name: Locate Android project
-        id: project
+          ZIP="$(find . -maxdepth 2 -name 'ALISLAH-Android-v2-source.zip' -print -quit)"
+          if [ -z "$ZIP" ]; then echo 'Android project ZIP not found'; exit 1; fi
+          unzip -o "$ZIP"
+      - name: Keep signing identity stable between builds
         run: |
-          GRADLE_FILE="$(find android-project -path '*/app/build.gradle' -print -quit)"
-          if [ -z "$GRADLE_FILE" ]; then
-            echo "ERROR: app/build.gradle not found"
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$(dirname "$GRADLE_FILE")")"
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Android project: $PROJECT_DIR"
-
-      - name: Configure Java and Kotlin targets
-        env:
-          PROJECT_DIR: ${{ steps.project.outputs.dir }}
-        run: |
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          project = Path(os.environ["PROJECT_DIR"])
-          gradle_file = project / "app" / "build.gradle"
-          content = gradle_file.read_text()
-
-          if "compileOptions" in content and "VERSION_17" in content:
-              print("Java 17 compile options already present")
-          else:
-              block = """
-          
-          android {
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-          }
-          """
-              gradle_file.write_text(content + block)
-              print("Added Java 17 and Kotlin 17 targets")
-          PY
-
+          mkdir -p "$HOME/.android"
+          cp ALISLAH-Android-v2/debug.keystore "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
       - name: Build debug APK
-        env:
-          PROJECT_DIR: ${{ steps.project.outputs.dir }}
-        run: gradle -p "$PROJECT_DIR" assembleDebug
-
+        working-directory: ALISLAH-Android-v2
+        run: gradle assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-safe-install-apk
-          path: android-project/**/app/build/outputs/apk/debug/app-debug.apk
+          name: ALISLAH-all-in-one-apk
+          path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
