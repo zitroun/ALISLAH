@@ -1,0 +1,8 @@
+حزمة ALISLAH المحدثة
+
+1) ارفعي ALISLAH-Android-v2-source.zip إلى جذر مستودع GitHub.
+2) ارفعي build-android.yml إلى .github/workflows/build-android.yml.
+3) من Actions شغّلي Build ALISLAH Android APK عبر Run workflow.
+4) بعد نجاح البناء نزّلي Artifact المسمى ALISLAH-all-in-one-apk.
+
+الملف المضغوط يحتوي مصدر Android كاملاً. هذه حزمة مصدر وليست APK مبنيًا أو مختبرًا على هاتف فعلي. تفاصيل المزايا والقيود في ALISLAH-Android-v2/README_AR.md داخل ملف المصدر.
