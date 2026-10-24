@@ -1,34 +1,728 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#176b5b"><title>ALISLAH | تنظيم يومك</title><style>
-:root{--bg:#f3f7f5;--card:#fff;--ink:#18312b;--muted:#66766f;--brand:#176b5b;--soft:#e6f4ef;--line:#dce7e2;--red:#b42318}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial;line-height:1.6}button,input,textarea,select{font:inherit}button{cursor:pointer}.app{max-width:1000px;margin:auto;padding:16px 14px 80px}.top,.brand,.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.brand{justify-content:flex-start}.logo{background:linear-gradient(145deg,var(--brand),#36a18a);color:#fff;width:48px;height:48px;border-radius:15px;display:grid;place-items:center;font-weight:900;font-size:24px}h1{font-size:1.25rem;margin:0}.muted,.sub{color:var(--muted);font-size:.9rem}.btn,.tab{border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);padding:9px 13px;font-weight:650}.btn.primary,.tab.active{background:var(--brand);border-color:var(--brand);color:#fff}.btn.soft{background:var(--soft);color:var(--brand);border-color:transparent}.hero{margin:17px 0;background:linear-gradient(125deg,#145b50,#248b73);color:white;border-radius:22px;padding:21px}.hero h2{margin:0 0 5px}.hero p{margin:0;color:#e1f5ee}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.stat,.panel{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:15px;min-width:0}.num{font-size:1.5rem;color:var(--brand);font-weight:800}.tabs{display:flex;gap:7px;overflow:auto;padding:3px 0 13px}.tab{white-space:nowrap}.view{display:none}.view.active{display:block}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:13px}.panel h3{margin:0 0 12px}.field{display:flex;gap:8px;margin-bottom:8px}.field input{flex:1}input,textarea,select{width:100%;min-width:0;border:1px solid var(--line);border-radius:11px;padding:11px;background:white;color:var(--ink)}textarea{resize:vertical}.list{display:grid;gap:8px;margin-top:12px}.item{display:flex;gap:9px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:12px;background:#fff}.grow{flex:1;min-width:0;overflow-wrap:anywhere}.item.done .title{text-decoration:line-through;color:var(--muted)}.title{font-weight:700}.check{width:19px;height:19px;accent-color:var(--brand);margin-top:4px}.mini{border:0;background:transparent;color:var(--muted);padding:4px}.empty{padding:18px;border:1px dashed var(--line);border-radius:12px;text-align:center;color:var(--muted)}.progress{height:9px;border-radius:99px;background:#e8efec;overflow:hidden}.progress span{display:block;height:100%;background:var(--brand);width:0}.habitgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.habit{padding:13px;border:1px solid var(--line);border-radius:14px}.habit h4{margin:0 0 6px}.chat{display:flex;flex-direction:column;min-height:55vh}.messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:12px 0}.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:90%;padding:11px 13px;border-radius:14px}.bubble.user{align-self:flex-start;background:var(--brand);color:white}.bubble.assistant{align-self:flex-end;background:var(--soft)}.bubble.system{align-self:center;background:#f1f3f2;color:var(--muted);font-size:.86rem}.compose{display:flex;gap:8px;align-items:flex-end}.compose textarea{min-height:48px;max-height:130px}.notice{padding:12px;border-radius:12px;background:#fff7e6;border:1px solid #f1d7a3;color:#765516;font-size:.9rem;margin-top:12px}.setting{padding:12px 0;border-bottom:1px solid var(--line)}.setting:last-child{border:0}.hidden{display:none!important}.footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:20px}.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#18312b;color:white;padding:10px 15px;border-radius:12px;max-width:90%;z-index:4}@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.grid,.habitgrid{grid-template-columns:1fr}.top{align-items:flex-start;flex-wrap:wrap}.hero{padding:17px}}
-</style><link rel="manifest" href="./manifest.json">
+
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#176b5b">
+<title>ALISLAH | تنظيم يومك</title>
+<style>
+:root{--bg:#f3f7f5;--card:#fff;--ink:#18312b;--muted:#66766f;--brand:#176b5b;--soft:#e6f4ef;--line:#dce7e2;--red:#b42318}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial;line-height:1.6}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+.app{max-width:1000px;margin:auto;padding:16px 14px 80px}
+.top,.brand,.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{justify-content:flex-start}
+.logo{background:linear-gradient(145deg,var(--brand),#36a18a);color:#fff;width:48px;height:48px;border-radius:15px;display:grid;place-items:center;font-weight:900;font-size:24px}
+h1{font-size:1.25rem;margin:0}
+.muted,.sub{color:var(--muted);font-size:.9rem}
+.btn,.tab{border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);padding:9px 13px;font-weight:650}
+.btn.primary,.tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.soft{background:var(--soft);color:var(--brand);border-color:transparent}
+.hero{margin:17px 0;background:linear-gradient(125deg,#145b50,#248b73);color:white;border-radius:22px;padding:21px}
+.hero h2{margin:0 0 5px}
+.hero p{margin:0;color:#e1f5ee}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat,.panel{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:15px;min-width:0}
+.num{font-size:1.5rem;color:var(--brand);font-weight:800}
+.tabs{display:flex;gap:7px;overflow:auto;padding:3px 0 13px}
+.tab{white-space:nowrap}
+.view{display:none}
+.view.active{display:block}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:13px}
+.panel h3{margin:0 0 12px}
+.field{display:flex;gap:8px;margin-bottom:8px}
+.field input{flex:1}
+input,textarea,select{width:100%;min-width:0;border:1px solid var(--line);border-radius:11px;padding:11px;background:white;color:var(--ink)}
+textarea{resize:vertical}
+.list{display:grid;gap:8px;margin-top:12px}
+.item{display:flex;gap:9px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.item.done .title{text-decoration:line-through;color:var(--muted)}
+.title{font-weight:700}
+.check{width:19px;height:19px;accent-color:var(--brand);margin-top:4px}
+.mini{border:0;background:transparent;color:var(--muted);padding:4px}
+.empty{padding:18px;border:1px dashed var(--line);border-radius:12px;text-align:center;color:var(--muted)}
+.progress{height:9px;border-radius:99px;background:#e8efec;overflow:hidden}
+.progress span{display:block;height:100%;background:var(--brand);width:0}
+.habitgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.habit{padding:13px;border:1px solid var(--line);border-radius:14px}
+.habit h4{margin:0 0 6px}
+.chat{display:flex;flex-direction:column;min-height:55vh}
+.messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:12px 0}
+.bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:90%;padding:11px 13px;border-radius:14px}
+.bubble.user{align-self:flex-start;background:var(--brand);color:white}
+.bubble.assistant{align-self:flex-end;background:var(--soft)}
+.bubble.system{align-self:center;background:#f1f3f2;color:var(--muted);font-size:.86rem}
+.compose{display:flex;gap:8px;align-items:flex-end}
+.compose textarea{min-height:48px;max-height:130px}
+.notice{padding:12px;border-radius:12px;background:#fff7e6;border:1px solid #f1d7a3;color:#765516;font-size:.9rem;margin-top:12px}
+.setting{padding:12px 0;border-bottom:1px solid var(--line)}
+.setting:last-child{border:0}
+.hidden{display:none!important}
+.footer{text-align:center;color:var(--muted);font-size:.8rem;margin-top:20px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#18312b;color:white;padding:10px 15px;border-radius:12px;max-width:90%;z-index:4}
+@media(max-width:700px){
+.stats{grid-template-columns:repeat(2,1fr)}
+.grid,.habitgrid{grid-template-columns:1fr}
+.top{align-items:flex-start;flex-wrap:wrap}
+.hero{padding:17px}
+}
+</style>
+<link rel="manifest" href="./manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ALISLAH">
-</head><body><div class="app"><header class="top"><div class="brand"><div class="logo">إ</div><div><h1>ALISLAH</h1><div class="sub">رفيقك لتنظيم اليوم والحياة الأسرية</div></div></div><div><button class="btn" id="export">نسخة احتياطية</button> <button class="btn" id="import">استعادة</button><input id="file" type="file" accept="application/json" class="hidden"></div></header>
-<section class="hero"><h2 id="greeting">خطوة صغيرة تصنع فرقًا 🌿</h2><p id="date"></p></section><section class="stats"><div class="stat"><div class="num" id="doneN">0</div><div class="muted">مهام منجزة اليوم</div></div><div class="stat"><div class="num" id="leftN">0</div><div class="muted">مهام متبقية</div></div><div class="stat"><div class="num" id="habitPct">0%</div><div class="muted">إنجاز العادات</div></div><div class="stat"><div class="num" id="habitN">0</div><div class="muted">عادات اليوم المنجزة</div></div></section>
-<nav class="tabs"><button class="tab active" data-tab="tasks">المهام</button><button class="tab" data-tab="habits">العادات</button><button class="tab" data-tab="family">الأسرة</button><button class="tab" data-tab="assistant">المساعد الذكي</button><button class="tab" data-tab="settings">الإعدادات</button></nav>
-<section class="view active" id="tasks"><div class="grid"><div class="panel"><div class="row"><h3>مهام اليوم</h3><span class="muted" id="count"></span></div><form id="taskForm"><div class="field"><input id="taskText" maxlength="180" required placeholder="مثال: ترتيب المطبخ"><button class="btn primary">إضافة</button></div><div class="field"><select id="priority"><option value="عادية">أولوية عادية</option><option value="مهمة جدًا">مهمة جدًا</option><option value="يمكن تأجيلها">يمكن تأجيلها</option></select><input id="taskDate" type="date" aria-label="تاريخ المهمة"></div></form><div class="list" id="tasksList"></div></div><div class="panel"><h3>تقدمك اليوم</h3><div class="progress"><span id="progress"></span></div><p class="muted" id="progressText">ابدئي بمهمة واحدة صغيرة.</p><div class="notice">نصيحة: اختاري ثلاث أولويات فقط، واتركي مساحة للراحة.</div></div></div></section>
-<section class="view" id="habits"><div class="panel"><h3>عاداتي اليومية</h3><form id="habitForm"><div class="field"><input id="habitText" maxlength="100" required placeholder="مثال: قراءة 10 دقائق"><button class="btn primary">إضافة عادة</button></div></form><p class="muted">تُحفظ العادات على هذا الجهاز. علّميها عند إنجازها اليوم.</p><div id="habitsList" class="habitgrid"></div></div></section>
-<section class="view" id="family"><div class="grid"><div class="panel"><h3>فكرة عائلية اليوم</h3><div id="idea" class="item"><div class="grow"></div></div><button id="nextIdea" class="btn soft" style="margin-top:10px">فكرة أخرى</button></div><div class="panel"><h3>أنشطة قصيرة للأطفال</h3><div class="list"><div class="item"><div class="grow"><div class="title">قصة من الخيال</div><div class="muted">ابتكروا مغامرة من ثلاث جمل.</div></div></div><div class="item"><div class="grow"><div class="title">صيد الألوان</div><div class="muted">ابحثوا عن ثلاثة أشياء من اللون نفسه.</div></div></div><div class="item"><div class="grow"><div class="title">ترتيب معًا</div><div class="muted">خمس دقائق لترتيب الألعاب مع أغنية.</div></div></div></div></div></div></section>
-<section class="view" id="assistant"><div class="panel chat"><div class="row"><h3>المساعد الذكي</h3><span class="muted" id="aiStatus">سيُختبر الاتصال عند الإرسال</span></div><div id="messages" class="messages" aria-live="polite"><div class="bubble assistant">أهلًا بكِ في ALISLAH 🌿 اكتبي سؤالك. سأحاول الاتصال بخدمة الذكاء الاصطناعي، وإذا تعذّر الاتصال سأوضح ذلك وأقدّم مساعدة محلية.</div></div><div class="field"><button class="btn soft quick" data-prompt="رتّب لي يومي في جدول بسيط.">تنظيم يومي</button><button class="btn soft quick" data-prompt="اقترح نشاطًا عائليًا اليوم.">فكرة للأسرة</button></div><form id="chatForm"><div class="compose"><textarea id="chatText" maxlength="4000" required rows="2" placeholder="اكتبي سؤالك..."></textarea><button class="btn primary" id="send">إرسال</button></div></form><div class="muted">لا تضعي معلومات شخصية حساسة. مفتاح API لا يُحفظ في التطبيق؛ يجب أن يبقى في Cloudflare Secrets.</div></div></section>
-<section class="view" id="settings"><div class="panel"><h3>الإعدادات والخصوصية</h3><div class="setting"><label for="worker"><strong>عنوان خدمة المساعد</strong></label><p class="muted">رابط Cloudflare Worker. لا تضعي مفتاح API هنا.</p><input id="worker" type="url" placeholder="https://...workers.dev"></div><div class="setting"><label for="name"><strong>اسم التحية (اختياري)</strong></label><input id="name" maxlength="40" placeholder="صديقتي"></div><div class="setting"><button class="btn primary" id="saveSettings">حفظ الإعدادات</button> <button class="btn" id="test">اختبار الاتصال</button><span id="testResult" class="muted"></span></div><div class="setting"><button class="btn" id="clearChat">مسح المحادثة</button> <button class="btn" id="reset">مسح جميع البيانات</button></div><div class="notice">الأمان: لا تضعي مفتاح API في ملف HTML أو GitHub. خزّنيه فقط كـ Secret داخل Cloudflare.</div></div></section><div class="footer">ALISLAH · الإصدار 2.0 · بياناتك المحلية تبقى في متصفحك</div></div><div id="toast" class="toast hidden" role="status"></div>
+</head>
+<body>
+<div class="app">
+<header class="top">
+<div class="brand">
+<div class="logo">إ</div>
+<div>
+<h1>ALISLAH</h1>
+<div class="sub">رفيقك لتنظيم اليوم والحياة الأسرية</div>
+</div>
+</div>
+<div>
+<button class="btn" id="export">نسخة احتياطية</button>
+<button class="btn" id="import">استعادة</button>
+<input id="file" type="file" accept="application/json" class="hidden">
+</div>
+</header>
+
+<section class="hero">
+<h2 id="greeting">خطوة صغيرة تصنع فرقًا 🌿</h2>
+<p id="date"></p>
+</section>
+
+<section class="stats">
+<div class="stat"><div class="num" id="doneN">0</div><div class="muted">مهام منجزة اليوم</div></div>
+<div class="stat"><div class="num" id="leftN">0</div><div class="muted">مهام متبقية</div></div>
+<div class="stat"><div class="num" id="habitPct">0%</div><div class="muted">إنجاز العادات</div></div>
+<div class="stat"><div class="num" id="habitN">0</div><div class="muted">عادات اليوم المنجزة</div></div>
+</section>
+
+<nav class="tabs">
+<button class="tab active" data-tab="tasks">المهام</button>
+<button class="tab" data-tab="habits">العادات</button>
+<button class="tab" data-tab="family">الأسرة</button>
+<button class="tab" data-tab="assistant">المساعد الذكي</button>
+<button class="tab" data-tab="settings">الإعدادات</button>
+</nav>
+
+<section class="view active" id="tasks">
+<div class="grid">
+<div class="panel">
+<div class="row"><h3>مهام اليوم</h3><span class="muted" id="count"></span></div>
+<form id="taskForm">
+<div class="field">
+<input id="taskText" maxlength="180" required placeholder="مثال: ترتيب المطبخ">
+<button class="btn primary">إضافة</button>
+</div>
+<div class="field">
+<select id="priority">
+<option value="عادية">أولوية عادية</option>
+<option value="مهمة جدًا">مهمة جدًا</option>
+<option value="يمكن تأجيلها">يمكن تأجيلها</option>
+</select>
+<input id="taskDate" type="date" aria-label="تاريخ المهمة">
+</div>
+</form>
+<div class="list" id="tasksList"></div>
+</div>
+<div class="panel">
+<h3>تقدمك اليوم</h3>
+<div class="progress"><span id="progress"></span></div>
+<p class="muted" id="progressText">ابدئي بمهمة واحدة صغيرة.</p>
+<div class="notice">نصيحة: اختاري ثلاث أولويات فقط، واتركي مساحة للراحة.</div>
+</div>
+</div>
+</section>
+
+<section class="view" id="habits">
+<div class="panel">
+<h3>عاداتي اليومية</h3>
+<form id="habitForm">
+<div class="field">
+<input id="habitText" maxlength="100" required placeholder="مثال: قراءة 10 دقائق">
+<button class="btn primary">إضافة عادة</button>
+</div>
+</form>
+<p class="muted">تُحفظ العادات على هذا الجهاز. علّميها عند إنجازها اليوم.</p>
+<div id="habitsList" class="habitgrid"></div>
+</div>
+</section>
+
+<section class="view" id="family">
+<div class="grid">
+<div class="panel">
+<h3>فكرة عائلية اليوم</h3>
+<div id="idea" class="item"><div class="grow"></div></div>
+<button id="nextIdea" class="btn soft" style="margin-top:10px">فكرة أخرى</button>
+</div>
+<div class="panel">
+<h3>أنشطة قصيرة للأطفال</h3>
+<div class="list">
+<div class="item"><div class="grow"><div class="title">قصة من الخيال</div><div class="muted">ابتكروا مغامرة من ثلاث جمل.</div></div></div>
+<div class="item"><div class="grow"><div class="title">صيد الألوان</div><div class="muted">ابحثوا عن ثلاثة أشياء من اللون نفسه.</div></div></div>
+<div class="item"><div class="grow"><div class="title">ترتيب معًا</div><div class="muted">خمس دقائق لترتيب الألعاب مع أغنية.</div></div></div>
+</div>
+</div>
+</div>
+</section>
+
+<section class="view" id="assistant">
+<div class="panel chat">
+<div class="row"><h3>المساعد الذكي</h3><span class="muted" id="aiStatus">سيُختبر الاتصال عند الإرسال</span></div>
+<div id="messages" class="messages" aria-live="polite">
+<div class="bubble assistant">أهلًا بكِ في ALISLAH 🌿 اكتبي سؤالك. سأحاول الاتصال بخدمة الذكاء الاصطناعي، وإذا تعذّر الاتصال سأوضح ذلك وأقدّم مساعدة محلية.</div>
+</div>
+<div class="field">
+<button class="btn soft quick" data-prompt="رتّب لي يومي في جدول بسيط.">تنظيم يومي</button>
+<button class="btn soft quick" data-prompt="اقترح نشاطًا عائليًا اليوم.">فكرة للأسرة</button>
+</div>
+<form id="chatForm">
+<div class="compose">
+<textarea id="chatText" maxlength="4000" required rows="2" placeholder="اكتبي سؤالك..."></textarea>
+<button class="btn primary" id="send">إرسال</button>
+</div>
+</form>
+<div class="muted">لا تضعي معلومات شخصية حساسة. مفتاح API لا يُحفظ في التطبيق؛ يجب أن يبقى في Cloudflare Secrets.</div>
+</div>
+</section>
+
+<section class="view" id="settings">
+<div class="panel">
+<h3>الإعدادات والخصوصية</h3>
+<div class="setting">
+<label for="worker"><strong>عنوان خدمة المساعد</strong></label>
+<p class="muted">رابط Cloudflare Worker. لا تضعي مفتاح API هنا.</p>
+<input id="worker" type="url" placeholder="https://...workers.dev">
+</div>
+<div class="setting">
+<label for="name"><strong>اسم التحية (اختياري)</strong></label>
+<input id="name" maxlength="40" placeholder="صديقتي">
+</div>
+<div class="setting">
+<button class="btn primary" id="saveSettings">حفظ الإعدادات</button>
+<button class="btn" id="test">اختبار الاتصال</button>
+<span id="testResult" class="muted"></span>
+</div>
+<div class="setting">
+<button class="btn" id="clearChat">مسح المحادثة</button>
+<button class="btn" id="reset">مسح جميع البيانات</button>
+</div>
+<div class="notice">الأمان: لا تضعي مفتاح API في ملف HTML أو GitHub. خزّنيه فقط كـ Secret داخل Cloudflare.</div>
+</div>
+</section>
+
+<div class="footer">ALISLAH · الإصدار 2.0 · بياناتك المحلية تبقى في متصفحك</div>
+</div>
+<div id="toast" class="toast hidden" role="status"></div>
+
 <script>
-(()=>{'use strict';const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],KEY='alislah_v2',ENDPOINT='https://alislah-ai.zitroun2222.workers.dev/';const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const uid=()=>globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random().toString(16).slice(2);const blank=()=>({tasks:[],habits:[],checks:{},chat:[],settings:{worker:ENDPOINT,name:''},idea:0});let data;try{data={...blank(),...JSON.parse(localStorage.getItem(KEY)||'{}')};}catch{data=blank()}data.tasks=Array.isArray(data.tasks)?data.tasks:[];data.habits=Array.isArray(data.habits)?data.habits:[];data.checks=data.checks&&typeof data.checks==='object'?data.checks:{};data.chat=Array.isArray(data.chat)?data.chat.slice(-30):[];data.settings={...blank().settings,...data.settings};let timer;function toast(t){$('#toast').textContent=t;$('#toast').classList.remove('hidden');clearTimeout(timer);timer=setTimeout(()=>$('#toast').classList.add('hidden'),2600)}function save(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch{toast('تعذر حفظ البيانات في المتصفح')}stats()}function tab(n){$$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===n));$$('.view').forEach(v=>v.classList.toggle('active',v.id===n))}$$('.tab').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('#date').textContent=new Intl.DateTimeFormat('ar-DZ',{dateStyle:'full'}).format(new Date());$('#taskDate').value=today();
-function renderTasks(){const ts=data.tasks.filter(t=>t.date===today()).sort((a,b)=>Number(a.done)-Number(b.done));$('#count').textContent=ts.length+' مهام';$('#tasksList').innerHTML=ts.length?ts.map(t=>`<div class="item ${t.done?'done':''}"><input class="check tc" type="checkbox" data-id="${esc(t.id)}" ${t.done?'checked':''}><div class="grow"><div class="title">${esc(t.text)}</div><div class="muted">${esc(t.priority)}</div></div><button class="mini deltask" data-id="${esc(t.id)}">حذف</button></div>`).join(''):'<div class="empty">لا توجد مهام اليوم. أضيفي أول مهمة 🌱</div>';$$('.tc').forEach(c=>c.onchange=()=>{let t=data.tasks.find(x=>x.id===c.dataset.id);if(t)t.done=c.checked;save();renderTasks()});$$('.deltask').forEach(b=>b.onclick=()=>{data.tasks=data.tasks.filter(t=>t.id!==b.dataset.id);save();renderTasks()});let done=ts.filter(t=>t.done).length;$('#progress').style.width=(ts.length?done/ts.length*100:0)+'%';$('#progressText').textContent=ts.length?`أنجزتِ ${done} من ${ts.length} مهام.`:'ابدئي بمهمة واحدة صغيرة.'}
-$('#taskForm').onsubmit=e=>{e.preventDefault();let text=$('#taskText').value.trim();if(!text)return;data.tasks.push({id:uid(),text,date:$('#taskDate').value||today(),priority:$('#priority').value,done:false});$('#taskText').value='';$('#taskDate').value=today();save();renderTasks();toast('تمت إضافة المهمة')};
-function renderHabits(){let c=data.checks[today()]||{};$('#habitsList').innerHTML=data.habits.length?data.habits.map(h=>`<div class="habit"><div class="row"><h4>${esc(h.text)}</h4><button class="mini delhabit" data-id="${esc(h.id)}">حذف</button></div><p class="muted">${c[h.id]?'تم الإنجاز اليوم ✓':'كل خطوة صغيرة مهمة'}</p><button class="btn ${c[h.id]?'soft':'primary'} togglehabit" data-id="${esc(h.id)}">${c[h.id]?'إلغاء الإنجاز':'أنجزتها اليوم'}</button></div>`).join(''):'<div class="empty" style="grid-column:1/-1">أضيفي عادة تريدين المحافظة عليها.</div>';$$('.togglehabit').forEach(b=>b.onclick=()=>{data.checks[today()]=data.checks[today()]||{};data.checks[today()][b.dataset.id]=!data.checks[today()][b.dataset.id];save();renderHabits()});$$('.delhabit').forEach(b=>b.onclick=()=>{data.habits=data.habits.filter(h=>h.id!==b.dataset.id);save();renderHabits()})}$('#habitForm').onsubmit=e=>{e.preventDefault();let text=$('#habitText').value.trim();if(!text)return;if(data.habits.some(h=>String(h.text||'').trim().toLocaleLowerCase('ar')===text.toLocaleLowerCase('ar'))){toast('هذه العادة موجودة بالفعل');return}if(data.habits.length>=40){toast('وصلتِ إلى الحد الأقصى للعادات');return}data.habits.push({id:uid(),text});$('#habitText').value='';save();renderHabits()};function stats(){let ts=data.tasks.filter(t=>t.date===today()),done=ts.filter(t=>t.done).length,c=data.checks[today()]||{},hd=data.habits.filter(h=>c[h.id]).length;$('#doneN').textContent=done;$('#leftN').textContent=ts.length-done;$('#habitN').textContent=hd;$('#habitPct').textContent=(data.habits.length?Math.round(hd/data.habits.length*100):0)+'%'}
-const ideas=[['سؤال اليوم','ما أجمل شيء حدث لكل فرد اليوم؟'],['صيد الألوان','ابحثوا عن ثلاثة أشياء من اللون نفسه.'],['مساعدة صغيرة','رتّبوا ركنًا صغيرًا معًا لخمس دقائق.'],['قصة مشتركة','كل شخص يضيف جملة إلى قصة خيالية.'],['امتنان','اذكروا شيئًا جميلًا تقدّرونه اليوم.']];function idea(){let x=ideas[data.idea%ideas.length];$('#idea').innerHTML=`<div class="grow"><div class="title">${esc(x[0])}</div><div class="muted">${esc(x[1])}</div></div>`}$('#nextIdea').onclick=()=>{data.idea++;save();idea()};
-function bubble(role,text,store=true){let el=document.createElement('div');el.className='bubble '+role;el.textContent=text;$('#messages').append(el);$('#messages').scrollTop=$('#messages').scrollHeight;if(store){data.chat.push({role:role==='user'?'user':'assistant',content:text.slice(0,4000)});data.chat=data.chat.slice(-30);save()}return el}function drawChat(){if(data.chat.length){$('#messages').innerHTML='';data.chat.forEach(x=>bubble(x.role==='user'?'user':'assistant',x.content,false))}}function localReply(m){if(/جدول|تنظيم|مهام|يوم/i.test(m))return 'لننظم اليوم ببساطة:\n1. اختاري أهم ثلاث مهام.\n2. ابدئي بمهمة صغيرة لمدة 20 دقيقة.\n3. ضعي وقتًا للراحة والأسرة.\n4. اجعلي المهام الإضافية اختيارية.';if(/طفل|بنت|ابنت|أسرة|عائلة/i.test(m))return 'جرّبي نشاطًا قصيرًا يناسب العمر، مثل قصة مشتركة أو البحث عن أشياء بلون واحد. اجعلي الوقت ممتعًا دون ضغط.';if(/عادة|التزام/i.test(m))return 'ابدئي بعادة صغيرة جدًا واربطِيها بروتين قائم، وسجّلي إنجازك. إذا فاتك يوم، عودي في اليوم التالي دون لوم.';return 'هذا رد محلي مبسّط، وليس ردًا من الذكاء الاصطناعي المتصل. تحققي من اتصال الإنترنت ورابط الخدمة في الإعدادات، ثم أعيدي المحاولة.'}
-async function online(m){let raw=data.settings.worker.trim();let u;try{u=new URL(raw);if(u.protocol!=='https:')throw 0}catch{throw Error('رابط الخدمة غير صالح؛ افتحي الإعدادات وتحققي منه.')}let controller=new AbortController(),to=setTimeout(()=>controller.abort(),25000);try{let history=data.chat.slice(-8).map(x=>({role:x.role==='user'?'user':'assistant',content:x.content}));let r=await fetch(u.href,{method:'POST',mode:'cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history}),signal:controller.signal,cache:'no-store'});let j={};try{j=await r.json()}catch{}if(!r.ok)throw Error(j.error||`استجابة الخدمة ${r.status}`);if(typeof j.reply!=='string'||!j.reply.trim())throw Error('الخدمة لم ترجع إجابة صالحة');return j.reply.trim()}finally{clearTimeout(to)}}$('#chatForm').onsubmit=async e=>{e.preventDefault();let m=$('#chatText').value.trim();if(!m)return;$('#chatText').value='';bubble('user',m);$('#send').disabled=true;$('#send').textContent='انتظري…';let w=bubble('system','أحاول الاتصال بالذكاء الاصطناعي عبر الإنترنت…',false);try{let answer=await online(m);w.remove();bubble('assistant',answer);$('#aiStatus').textContent='تم الرد عبر الإنترنت'}catch(err){w.remove();$('#aiStatus').textContent='تعذر الاتصال — مساعدة محلية';bubble('assistant','لم يصلني رد من خدمة الذكاء الاصطناعي. السبب: '+(err.name==='AbortError'?'انتهت مهلة الاتصال.':err.message)+'\n\nمساعدة محلية مؤقتة:\n'+localReply(m))}finally{$('#send').disabled=false;$('#send').textContent='إرسال'}};$$('.quick').forEach(b=>b.onclick=()=>{$('#chatText').value=b.dataset.prompt;$('#chatText').focus()});$('#clearChat').onclick=()=>{if(confirm('مسح سجل المحادثة؟')){data.chat=[];save();$('#messages').innerHTML='';bubble('assistant','أهلًا بكِ، كيف أساعدك اليوم؟',false)}};
-$('#worker').value=data.settings.worker;$('#name').value=data.settings.name;$('#saveSettings').onclick=()=>{let w=$('#worker').value.trim();try{if(w&&new URL(w).protocol!=='https:')throw 0}catch{toast('أدخلي رابط HTTPS صحيحًا');return}data.settings.worker=w;data.settings.name=$('#name').value.trim();save();$('#greeting').textContent=data.settings.name?`أهلًا ${data.settings.name}، خطوة صغيرة تصنع فرقًا 🌿`:'خطوة صغيرة تصنع فرقًا 🌿';toast('تم حفظ الإعدادات')};$('#test').onclick=async()=>{let o=$('#testResult');o.textContent=' جارٍ الاختبار…';try{let r=await fetch($('#worker').value.trim(),{method:'GET',mode:'cors'});let t=await r.text();o.textContent=r.status===405&&/Use POST/i.test(t)?' الرابط يستجيب؛ جرّبي إرسال رسالة من المساعد.':` الاستجابة: ${r.status}`}catch{o.textContent=' تعذر اختبار الاتصال؛ جرّبي إرسال رسالة.'}};
-$('#export').onclick=()=>{let b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='alislah-backup-'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};$('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let x=JSON.parse(await f.text());if(!Array.isArray(x.tasks)||!Array.isArray(x.habits))throw 0;if(confirm('استبدال البيانات الحالية بالنسخة المختارة؟')){data={...blank(),...x,settings:{...blank().settings,...x.settings}};save();location.reload()}}catch{toast('الملف غير صالح')}finally{e.target.value=''}};$('#reset').onclick=()=>{if(confirm('سيتم مسح كل بيانات ALISLAH المحفوظة على هذا الجهاز. هل أنتِ متأكدة؟')){localStorage.removeItem(KEY);location.reload()}};
-renderTasks();renderHabits();stats();idea();drawChat();if(data.settings.name)$('#greeting').textContent=`أهلًا ${data.settings.name}، خطوة صغيرة تصنع فرقًا 🌿`;
-})();
-</script><script>
-if ("serviceWorker" in navigator && location.protocol === "https:") {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js")
-      .catch(err => console.warn("SW registration failed", err));
+(()=>{
+'use strict';
+
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+const KEY='alislah_v2';
+const ENDPOINT='https://alislah-ai.zitroun2222.workers.dev/';
+
+const today=()=>{
+ const d=new Date();
+ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({
+ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c]));
+
+const uid=()=>globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random().toString(16).slice(2);
+
+const blank=()=>({
+ tasks:[],
+ habits:[],
+ checks:{},
+ chat:[],
+ settings:{worker:ENDPOINT,name:''},
+ idea:0
+});
+
+let data;
+try{
+ data={...blank(),...JSON.parse(localStorage.getItem(KEY)||'{}')};
+}catch{
+ data=blank();
+}
+
+data.tasks=Array.isArray(data.tasks)?data.tasks:[];
+data.habits=Array.isArray(data.habits)?data.habits:[];
+data.checks=data.checks&&typeof data.checks==='object'?data.checks:{};
+data.chat=Array.isArray(data.chat)?data.chat.slice(-30):[];
+data.settings={...blank().settings,...data.settings};
+
+let timer;
+
+function toast(t){
+ $('#toast').textContent=t;
+ $('#toast').classList.remove('hidden');
+ clearTimeout(timer);
+ timer=setTimeout(()=>$('#toast').classList.add('hidden'),2600);
+}
+
+function save(){
+ try{
+  localStorage.setItem(KEY,JSON.stringify(data));
+ }catch{
+  toast('تعذر حفظ البيانات في المتصفح');
+ }
+ stats();
+}
+
+function tab(n){
+ $$('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===n));
+ $$('.view').forEach(v=>v.classList.toggle('active',v.id===n));
+}
+
+$$('.tab').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
+
+$('#date').textContent=new Intl.DateTimeFormat('ar-DZ',{dateStyle:'full'}).format(new Date());
+$('#taskDate').value=today();
+
+function renderTasks(){
+ const ts=data.tasks.filter(t=>t.date===today()).sort((a,b)=>Number(a.done)-Number(b.done));
+ $('#count').textContent=ts.length+' مهام';
+
+ $('#tasksList').innerHTML=ts.length?ts.map(t=>`
+ <div class="item ${t.done?'done':''}">
+ <input class="check tc" type="checkbox" data-id="${esc(t.id)}" ${t.done?'checked':''}>
+ <div class="grow">
+ <div class="title">${esc(t.text)}</div>
+ <div class="muted">${esc(t.priority)}</div>
+ </div>
+ <button class="mini deltask" data-id="${esc(t.id)}">حذف</button>
+ </div>`).join(''):'<div class="empty">لا توجد مهام اليوم. أضيفي أول مهمة 🌱</div>';
+
+ $$('.tc').forEach(c=>c.onchange=()=>{
+  let t=data.tasks.find(x=>x.id===c.dataset.id);
+  if(t)t.done=c.checked;
+  save();
+  renderTasks();
+ });
+
+ $$('.deltask').forEach(b=>b.onclick=()=>{
+  data.tasks=data.tasks.filter(t=>t.id!==b.dataset.id);
+  save();
+  renderTasks();
+ });
+
+ let done=ts.filter(t=>t.done).length;
+ $('#progress').style.width=(ts.length?done/ts.length*100:0)+'%';
+ $('#progressText').textContent=ts.length?`أنجزتِ ${done} من ${ts.length} مهام.`:'ابدئي بمهمة واحدة صغيرة.';
+}
+
+$('#taskForm').onsubmit=e=>{
+ e.preventDefault();
+ let text=$('#taskText').value.trim();
+ if(!text)return;
+
+ data.tasks.push({
+  id:uid(),
+  text,
+  date:$('#taskDate').value||today(),
+  priority:$('#priority').value,
+  done:false
+ });
+
+ $('#taskText').value='';
+ $('#taskDate').value=today();
+ save();
+ renderTasks();
+ toast('تمت إضافة المهمة');
+};
+
+function renderHabits(){
+ let c=data.checks[today()]||{};
+
+ $('#habitsList').innerHTML=data.habits.length?data.habits.map(h=>`
+ <div class="habit">
+ <div class="row">
+ <h4>${esc(h.text)}</h4>
+ <button class="mini delhabit" data-id="${esc(h.id)}">حذف</button>
+ </div>
+ <p class="muted">${c[h.id]?'تم الإنجاز اليوم ✓':'كل خطوة صغيرة مهمة'}</p>
+ <button class="btn ${c[h.id]?'soft':'primary'} togglehabit" data-id="${esc(h.id)}">${c[h.id]?'إلغاء الإنجاز':'أنجزتها اليوم'}</button>
+ </div>`).join(''):'<div class="empty" style="grid-column:1/-1">أضيفي عادة تريدين المحافظة عليها.</div>';
+
+ $$('.togglehabit').forEach(b=>b.onclick=()=>{
+  data.checks[today()]=data.checks[today()]||{};
+  data.checks[today()][b.dataset.id]=!data.checks[today()][b.dataset.id];
+  save();
+  renderHabits();
+ });
+
+ $$('.delhabit').forEach(b=>b.onclick=()=>{
+  data.habits=data.habits.filter(h=>h.id!==b.dataset.id);
+  save();
+  renderHabits();
+ });
+}
+
+$('#habitForm').onsubmit=e=>{
+ e.preventDefault();
+ let text=$('#habitText').value.trim();
+ if(!text)return;
+
+ if(data.habits.some(h=>String(h.text||'').trim().toLocaleLowerCase('ar')===text.toLocaleLowerCase('ar'))){
+  toast('هذه العادة موجودة بالفعل');
+  return;
+ }
+
+ if(data.habits.length>=40){
+  toast('وصلتِ إلى الحد الأقصى للعادات');
+  return;
+ }
+
+ data.habits.push({id:uid(),text});
+ $('#habitText').value='';
+ save();
+ renderHabits();
+};
+
+function stats(){
+ let ts=data.tasks.filter(t=>t.date===today());
+ let done=ts.filter(t=>t.done).length;
+ let c=data.checks[today()]||{};
+ let hd=data.habits.filter(h=>c[h.id]).length;
+
+ $('#doneN').textContent=done;
+ $('#leftN').textContent=ts.length-done;
+ $('#habitN').textContent=hd;
+ $('#habitPct').textContent=(data.habits.length?Math.round(hd/data.habits.length*100):0)+'%';
+}
+
+const ideas=[
+ ['سؤال اليوم','ما أجمل شيء حدث لكل فرد اليوم؟'],
+ ['صيد الألوان','ابحثوا عن ثلاثة أشياء من اللون نفسه.'],
+ ['مساعدة صغيرة','رتّبوا ركنًا صغيرًا معًا لخمس دقائق.'],
+ ['قصة مشتركة','كل شخص يضيف جملة إلى قصة خيالية.'],
+ ['امتنان','اذكروا شيئًا جميلًا تقدّرونه اليوم.']
+];
+
+function idea(){
+ let x=ideas[data.idea%ideas.length];
+ $('#idea').innerHTML=`<div class="grow"><div class="title">${esc(x[0])}</div><div class="muted">${esc(x[1])}</div></div>`;
+}
+
+$('#nextIdea').onclick=()=>{
+ data.idea++;
+ save();
+ idea();
+};
+
+/* ===== تحويل الخطة إلى مهام ===== */
+
+function convertPlanToTasks(text){
+ const candidates=String(text)
+  .split(/\n+/)
+  .map(line=>line.trim())
+  .filter(line=>/^(?:\d{1,2}\s*[.)،\-:]\s*|[-•*]\s+)/.test(line))
+  .map(line=>line
+   .replace(/^(?:\d{1,2}\s*[.)،\-:]\s*|[-•*]\s+)/,'')
+   .replace(/^\*\*(.*?)\*\*$/,'$1')
+   .replace(/\s+/g,' ')
+   .trim()
+   .replace(/[.!؛،]+$/,'')
+  )
+  .filter(line=>line.length>=3&&line.length<=180);
+
+ if(!candidates.length){
+  toast('لم أجد مهام مرقمة. اطلبي من المساعد خطة من بنود مرقمة.');
+  return;
+ }
+
+ let added=0;
+
+ for(const text of candidates){
+  const key=text.toLocaleLowerCase('ar');
+
+  const exists=data.tasks.some(t=>
+   t.date===today()&&
+   String(t.text||'').trim().toLocaleLowerCase('ar')===key
+  );
+
+  if(exists)continue;
+
+  data.tasks.push({
+   id:uid(),
+   text,
+   date:today(),
+   priority:'عادية',
+   done:false
   });
+
+  added++;
+ }
+
+ save();
+ renderTasks();
+
+ if(added){
+  tab('tasks');
+  toast('تمت إضافة '+added+' مهام إلى قائمة اليوم');
+ }else{
+  toast('هذه المهام موجودة بالفعل، لم تتم إضافة نسخ مكررة');
+ }
+}
+
+/* عرض زر التحويل أسفل الردود التي تتضمن بنودًا مرقمة */
+
+function bubble(role,text,store=true){
+ const el=document.createElement('div');
+ el.className='bubble '+role;
+ el.textContent=text;
+
+ const hasPlanItems=role==='assistant'&&
+  /(?:^|\n)\s*(?:\d{1,2}\s*[.)،\-:]|[-•*])\s+/m.test(text);
+
+ if(hasPlanItems){
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='btn soft';
+  btn.textContent='تحويل الخطة إلى مهام';
+  btn.style.marginTop='10px';
+  btn.onclick=()=>convertPlanToTasks(text);
+
+  el.appendChild(document.createElement('br'));
+  el.appendChild(btn);
+ }
+
+ $('#messages').append(el);
+ $('#messages').scrollTop=$('#messages').scrollHeight;
+
+ if(store){
+  data.chat.push({
+   role:role==='user'?'user':'assistant',
+   content:text.slice(0,4000)
+  });
+
+  data.chat=data.chat.slice(-30);
+  save();
+ }
+
+ return el;
+}
+
+function drawChat(){
+ if(data.chat.length){
+  $('#messages').innerHTML='';
+  data.chat.forEach(x=>bubble(x.role==='user'?'user':'assistant',x.content,false));
+ }
+}
+
+function localReply(m){
+ if(/جدول|تنظيم|مهام|يوم/i.test(m))
+  return 'لننظم اليوم ببساطة:\n1. اختاري أهم ثلاث مهام.\n2. ابدئي بمهمة صغيرة لمدة 20 دقيقة.\n3. ضعي وقتًا للراحة والأسرة.\n4. اجعلي المهام الإضافية اختيارية.';
+
+ if(/طفل|بنت|ابنت|أسرة|عائلة/i.test(m))
+  return 'جرّبي نشاطًا قصيرًا يناسب العمر، مثل قصة مشتركة أو البحث عن أشياء بلون واحد. اجعلي الوقت ممتعًا دون ضغط.';
+
+ if(/عادة|التزام/i.test(m))
+  return 'ابدئي بعادة صغيرة جدًا واربطِيها بروتين قائم، وسجّلي إنجازك. إذا فاتك يوم، عودي في اليوم التالي دون لوم.';
+
+ return 'هذا رد محلي مبسّط، وليس ردًا من الذكاء الاصطناعي المتصل. تحققي من اتصال الإنترنت ورابط الخدمة في الإعدادات، ثم أعيدي المحاولة.';
+}
+
+async function online(m){
+ let raw=data.settings.worker.trim();
+ let u;
+
+ try{
+  u=new URL(raw);
+  if(u.protocol!=='https:')throw 0;
+ }catch{
+  throw Error('رابط الخدمة غير صالح؛ افتحي الإعدادات وتحققي منه.');
+ }
+
+ let controller=new AbortController();
+ let to=setTimeout(()=>controller.abort(),25000);
+
+ try{
+  let history=data.chat.slice(-8).map(x=>({
+   role:x.role==='user'?'user':'assistant',
+   content:x.content
+  }));
+
+  let r=await fetch(u.href,{
+   method:'POST',
+   mode:'cors',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({message:m,history}),
+   signal:controller.signal,
+   cache:'no-store'
+  });
+
+  let j={};
+  try{j=await r.json();}catch{}
+
+  if(!r.ok)throw Error(j.error||`استجابة الخدمة ${r.status}`);
+  if(typeof j.reply!=='string'||!j.reply.trim())throw Error('الخدمة لم ترجع إجابة صالحة');
+
+  return j.reply.trim();
+ }finally{
+  clearTimeout(to);
+ }
+}
+
+$('#chatForm').onsubmit=async e=>{
+ e.preventDefault();
+
+ let m=$('#chatText').value.trim();
+ if(!m)return;
+
+ $('#chatText').value='';
+ bubble('user',m);
+
+ $('#send').disabled=true;
+ $('#send').textContent='انتظري…';
+
+ let w=bubble('system','أحاول الاتصال بالذكاء الاصطناعي عبر الإنترنت…',false);
+
+ try{
+  let answer=await online(m);
+  w.remove();
+  bubble('assistant',answer);
+  $('#aiStatus').textContent='تم الرد عبر الإنترنت';
+ }catch(err){
+  w.remove();
+  $('#aiStatus').textContent='تعذر الاتصال — مساعدة محلية';
+
+  bubble(
+   'assistant',
+   'لم يصلني رد من خدمة الذكاء الاصطناعي. السبب: '+
+   (err.name==='AbortError'?'انتهت مهلة الاتصال.':err.message)+
+   '\n\nمساعدة محلية مؤقتة:\n'+localReply(m)
+  );
+ }finally{
+  $('#send').disabled=false;
+  $('#send').textContent='إرسال';
+ }
+};
+
+$$('.quick').forEach(b=>b.onclick=()=>{
+ $('#chatText').value=b.dataset.prompt;
+ $('#chatText').focus();
+});
+
+$('#clearChat').onclick=()=>{
+ if(confirm('مسح سجل المحادثة؟')){
+  data.chat=[];
+  save();
+  $('#messages').innerHTML='';
+  bubble('assistant','أهلًا بكِ، كيف أساعدك اليوم؟',false);
+ }
+};
+
+$('#worker').value=data.settings.worker;
+$('#name').value=data.settings.name;
+
+$('#saveSettings').onclick=()=>{
+ let w=$('#worker').value.trim();
+
+ try{
+  if(w&&new URL(w).protocol!=='https:')throw 0;
+ }catch{
+  toast('أدخلي رابط HTTPS صحيحًا');
+  return;
+ }
+
+ data.settings.worker=w;
+ data.settings.name=$('#name').value.trim();
+ save();
+
+ $('#greeting').textContent=data.settings.name?
+  `أهلًا ${data.settings.name}، خطوة صغيرة تصنع فرقًا 🌿`:
+  'خطوة صغيرة تصنع فرقًا 🌿';
+
+ toast('تم حفظ الإعدادات');
+};
+
+$('#test').onclick=async()=>{
+ let o=$('#testResult');
+ o.textContent=' جارٍ الاختبار…';
+
+ try{
+  let r=await fetch($('#worker').value.trim(),{method:'GET',mode:'cors'});
+  let t=await r.text();
+
+  o.textContent=r.status===405&&/Use POST/i.test(t)?
+   ' الرابط يستجيب؛ جرّبي إرسال رسالة من المساعد.':
+   ` الاستجابة: ${r.status}`;
+ }catch{
+  o.textContent=' تعذر اختبار الاتصال؛ جرّبي إرسال رسالة.';
+ }
+};
+
+$('#export').onclick=()=>{
+ let b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+ let a=document.createElement('a');
+ a.href=URL.createObjectURL(b);
+ a.download='alislah-backup-'+today()+'.json';
+ a.click();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+$('#import').onclick=()=>$('#file').click();
+
+$('#file').onchange=async e=>{
+ let f=e.target.files[0];
+ if(!f)return;
+
+ try{
+  let x=JSON.parse(await f.text());
+  if(!Array.isArray(x.tasks)||!Array.isArray(x.habits))throw 0;
+
+  if(confirm('استبدال البيانات الحالية بالنسخة المختارة؟')){
+   data={...blank(),...x,settings:{...blank().settings,...x.settings}};
+   save();
+   location.reload();
+  }
+ }catch{
+  toast('الملف غير صالح');
+ }finally{
+  e.target.value='';
+ }
+};
+
+$('#reset').onclick=()=>{
+ if(confirm('سيتم مسح كل بيانات ALISLAH المحفوظة على هذا الجهاز. هل أنتِ متأكدة؟')){
+  localStorage.removeItem(KEY);
+  location.reload();
+ }
+};
+
+renderTasks();
+renderHabits();
+stats();
+idea();
+drawChat();
+
+if(data.settings.name){
+ $('#greeting').textContent=`أهلًا ${data.settings.name}، خطوة صغيرة تصنع فرقًا 🌿`;
+}
+})();
+</script>
+
+<script>
+if("serviceWorker" in navigator && location.protocol==="https:"){
+ window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("./sw.js")
+   .catch(err=>console.warn("SW registration failed",err));
+ });
 }
 </script>
-</body></html>
+</body>
+</html>
