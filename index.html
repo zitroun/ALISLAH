@@ -131,6 +131,7 @@ textarea{resize:vertical}
 </div>
 </form>
 <div class="list" id="tasksList"></div>
+<button id="convertLastPlan" class="btn soft" type="button" style="margin-top:12px;width:100%">تحويل آخر خطة إلى مهام مجدولة</button>
 </div>
 <div class="panel">
 <h3>تقدمك اليوم</h3>
@@ -248,7 +249,8 @@ const blank=()=>({
  checks:{},
  chat:[],
  settings:{worker:ENDPOINT,name:''},
- idea:0
+ idea:0,
+ lastPlan:''
 });
 
 let data;
@@ -263,6 +265,7 @@ data.habits=Array.isArray(data.habits)?data.habits:[];
 data.checks=data.checks&&typeof data.checks==='object'?data.checks:{};
 data.chat=Array.isArray(data.chat)?data.chat.slice(-30):[];
 data.settings={...blank().settings,...data.settings};
+data.lastPlan=typeof data.lastPlan==='string'?data.lastPlan:'';
 
 let timer;
 
@@ -270,7 +273,7 @@ function toast(t){
  $('#toast').textContent=t;
  $('#toast').classList.remove('hidden');
  clearTimeout(timer);
- timer=setTimeout(()=>$('#toast').classList.add('hidden'),2600);
+ timer=setTimeout(()=>$('#toast').classList.add('hidden'),3000);
 }
 
 function save(){
@@ -423,31 +426,61 @@ $('#nextIdea').onclick=()=>{
  idea();
 };
 
-/* ===== تحويل الخطة إلى مهام ===== */
+/* استخراج الخطوات من تنسيقات متعددة */
+function extractPlanItems(text){
+ const source=String(text||'')
+  .replace(/\r/g,'\n')
+  .replace(/\u00a0/g,' ')
+  .trim();
+
+ const marker=/^\s*(?:[0-9٠-٩۰-۹]{1,2}\s*[.)،\-:：]\s*|[-•*]\s+)/;
+ const cleanItem=s=>s
+  .replace(/^\s+/,'')
+  .replace(/\*\*/g,'')
+  .replace(/__/g,'')
+  .replace(/^["'«»“”]+|["'«»“”]+$/g,'')
+  .replace(/\s+/g,' ')
+  .trim()
+  .replace(/[.!؛،]+$/,'')
+  .trim();
+
+ let candidates=[];
+
+ for(const original of source.split('\n')){
+  let line=original.trim();
+  if(!line)continue;
+  line=line.replace(/^#{1,6}\s*/,'');
+  if(marker.test(line)){
+   candidates.push(cleanItem(line.replace(marker,'')));
+  }
+ }
+
+ /* احتياط: بعض الردود تضع البنود في فقرة واحدة */
+ if(!candidates.length){
+  const inline=source.replace(/\s+/g,' ');
+  const re=/(?:^|\s)([0-9٠-٩۰-۹]{1,2}\s*[.)،\-:：]\s*)(.*?)(?=\s+[0-9٠-٩۰-۹]{1,2}\s*[.)،\-:：]\s+|$)/g;
+  let match;
+  while((match=re.exec(inline))!==null){
+   const item=cleanItem(match[2]);
+   if(item)candidates.push(item);
+  }
+ }
+
+ return [...new Set(candidates.filter(x=>x.length>=3&&x.length<=180))];
+}
 
 function convertPlanToTasks(text){
- const candidates=String(text)
-  .split(/\n+/)
-  .map(line=>line.trim())
-  .filter(line=>/^(?:\d{1,2}\s*[.)،\-:]\s*|[-•*]\s+)/.test(line))
-  .map(line=>line
-   .replace(/^(?:\d{1,2}\s*[.)،\-:]\s*|[-•*]\s+)/,'')
-   .replace(/^\*\*(.*?)\*\*$/,'$1')
-   .replace(/\s+/g,' ')
-   .trim()
-   .replace(/[.!؛،]+$/,'')
-  )
-  .filter(line=>line.length>=3&&line.length<=180);
+ const candidates=extractPlanItems(text);
 
  if(!candidates.length){
-  toast('لم أجد مهام مرقمة. اطلبي من المساعد خطة من بنود مرقمة.');
+  toast('لم أجد بنودًا واضحة. اطلبي من المساعد كتابة كل مهمة في سطر يبدأ برقم مثل 1. أو ١.');
   return;
  }
 
  let added=0;
 
- for(const text of candidates){
-  const key=text.toLocaleLowerCase('ar');
+ for(const taskText of candidates){
+  const key=taskText.toLocaleLowerCase('ar');
 
   const exists=data.tasks.some(t=>
    t.date===today()&&
@@ -458,7 +491,7 @@ function convertPlanToTasks(text){
 
   data.tasks.push({
    id:uid(),
-   text,
+   text:taskText,
    date:today(),
    priority:'عادية',
    done:false
@@ -478,24 +511,31 @@ function convertPlanToTasks(text){
  }
 }
 
-/* عرض زر التحويل أسفل الردود التي تتضمن بنودًا مرقمة */
+$('#convertLastPlan').onclick=()=>{
+ if(!data.lastPlan){
+  toast('لا توجد خطة محفوظة للتحويل. اطلبي خطة من المساعد أولًا.');
+  tab('assistant');
+  return;
+ }
+ convertPlanToTasks(data.lastPlan);
+};
 
+/* زر التحويل يظهر عند وجود بنود قابلة للاستخراج */
 function bubble(role,text,store=true){
  const el=document.createElement('div');
  el.className='bubble '+role;
  el.textContent=text;
 
- const hasPlanItems=role==='assistant'&&
-  /(?:^|\n)\s*(?:\d{1,2}\s*[.)،\-:]|[-•*])\s+/m.test(text);
+ const hasPlanItems=role==='assistant'&&extractPlanItems(text).length>0;
 
  if(hasPlanItems){
   const btn=document.createElement('button');
   btn.type='button';
   btn.className='btn soft';
   btn.textContent='تحويل الخطة إلى مهام';
+  btn.style.display='block';
   btn.style.marginTop='10px';
   btn.onclick=()=>convertPlanToTasks(text);
-
   el.appendChild(document.createElement('br'));
   el.appendChild(btn);
  }
@@ -510,6 +550,11 @@ function bubble(role,text,store=true){
   });
 
   data.chat=data.chat.slice(-30);
+
+  if(role==='assistant'&&extractPlanItems(text).length){
+   data.lastPlan=text;
+  }
+
   save();
  }
 
@@ -525,7 +570,7 @@ function drawChat(){
 
 function localReply(m){
  if(/جدول|تنظيم|مهام|يوم/i.test(m))
-  return 'لننظم اليوم ببساطة:\n1. اختاري أهم ثلاث مهام.\n2. ابدئي بمهمة صغيرة لمدة 20 دقيقة.\n3. ضعي وقتًا للراحة والأسرة.\n4. اجعلي المهام الإضافية اختيارية.';
+  return 'هذه خطة يومية مقترحة:\n1. اختاري أهم مهمة تحتاجين إنجازها اليوم.\n2. رتّبي مكانًا صغيرًا لمدة 10 دقائق.\n3. خصصي وقتًا للراحة والأسرة.\n4. راجعي ما أنجزتِه في نهاية اليوم.';
 
  if(/طفل|بنت|ابنت|أسرة|عائلة/i.test(m))
   return 'جرّبي نشاطًا قصيرًا يناسب العمر، مثل قصة مشتركة أو البحث عن أشياء بلون واحد. اجعلي الوقت ممتعًا دون ضغط.';
@@ -620,6 +665,7 @@ $$('.quick').forEach(b=>b.onclick=()=>{
 $('#clearChat').onclick=()=>{
  if(confirm('مسح سجل المحادثة؟')){
   data.chat=[];
+  data.lastPlan='';
   save();
   $('#messages').innerHTML='';
   bubble('assistant','أهلًا بكِ، كيف أساعدك اليوم؟',false);
@@ -652,17 +698,17 @@ $('#saveSettings').onclick=()=>{
 
 $('#test').onclick=async()=>{
  let o=$('#testResult');
- o.textContent=' جارٍ الاختبار…';
+ o.textContent='جارٍ الاختبار…';
 
  try{
   let r=await fetch($('#worker').value.trim(),{method:'GET',mode:'cors'});
   let t=await r.text();
 
   o.textContent=r.status===405&&/Use POST/i.test(t)?
-   ' الرابط يستجيب؛ جرّبي إرسال رسالة من المساعد.':
-   ` الاستجابة: ${r.status}`;
+   'الرابط يستجيب؛ جرّبي إرسال رسالة من المساعد.':
+   `الاستجابة: ${r.status}`;
  }catch{
-  o.textContent=' تعذر اختبار الاتصال؛ جرّبي إرسال رسالة.';
+  o.textContent='تعذر اختبار الاتصال؛ جرّبي إرسال رسالة.';
  }
 };
 
