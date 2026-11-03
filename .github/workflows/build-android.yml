@@ -102,33 +102,3 @@ jobs:
           )"
 
           if [ -z "$APKSIGNER" ]; then
-            echo "::error::apksigner not found."
-            exit 1
-          fi
-
-          "$APKSIGNER" verify --verbose --print-certs "$APK" \
-            | tee "$RUNNER_TEMP/signature.txt"
-
-          ACTUAL_APK_SHA256="$(
-            sed -n 's/.*certificate SHA-256 digest: //p' \
-              "$RUNNER_TEMP/signature.txt" |
-            head -n 1 |
-            tr -d ':\r\n ' |
-            tr '[:lower:]' '[:upper:]'
-          )"
-
-          echo "Expected signing key: $ALISLAH_SIGNING_CERT_SHA256"
-          echo "APK signing key:      $ACTUAL_APK_SHA256"
-
-          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::warning::APK signature differs from the agreed key. APK will still be published."
-          else
-            echo "APK signature verified successfully."
-          fi
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ALISLAH-all-in-one-apk
-          path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
