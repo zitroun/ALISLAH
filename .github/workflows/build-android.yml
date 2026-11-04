@@ -1,4 +1,3 @@
-
 name: Build ALISLAH Android APK
 
 on:
@@ -10,7 +9,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     env:
       ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
 
@@ -24,249 +22,155 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Set up Flutter for the embedded Arabic TTS module
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.5'
           channel: stable
           cache: true
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
       - name: Install Android SDK 34 components
         shell: bash
         run: |
           set -euo pipefail
-
-          : "${ANDROID_HOME:?ANDROID_HOME is not set on the GitHub runner}"
-
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager -print | sort -V | tail -n 1)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::Android SDK command-line tools are missing."
-            exit 1
-          fi
-
-          # Prevent yes SIGPIPE from failing the pipeline.
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          set -o pipefail
-
-          "$SDKMANAGER" "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2.1'
 
-      - name: Unpack Android source archive
+      - name: Unpack exactly one Android source archive
         shell: bash
         run: |
           set -euo pipefail
-
-          mapfile -t ZIP_FILES < <(
-            find . -maxdepth 2 -type f \
-              -name 'ALISLAH-Android-v2-source.zip' -print
-          )
-
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
-
           rm -rf ALISLAH-Android-v2
           unzip -o "${ZIP_FILES[0]}"
-
           test -s ALISLAH-Android-v2/debug.keystore
           test -s ALISLAH-Android-v2/app/build.gradle
           test -s ALISLAH-Android-v2/settings.gradle
+          echo "Source archive extracted into a clean directory."
 
-          echo "ALISLAH source extracted successfully."
-
-      - name: Prepare Mixer-TTS Flutter module
+      - name: Prepare offline Mixer-TTS Flutter module and download model assets
         shell: bash
         run: |
           set -euo pipefail
-
           MODULE="$PWD/ALISLAH-Android-v2/flutter_tts_generated"
-
           rm -rf "$MODULE"
-
-          flutter create \
-            --template=module \
-            --org dz.alislah.app \
-            --project-name alislah_tts \
-            "$MODULE"
-
-          cp -a ALISLAH-Android-v2/flutter_tts_module/lib/. \
-            "$MODULE/lib/"
-
-          cp ALISLAH-Android-v2/flutter_tts_module/pubspec.yaml \
-            "$MODULE/pubspec.yaml"
-
+          flutter create --template=module --org dz.alislah.app --project-name alislah_tts "$MODULE"
+          cp -a ALISLAH-Android-v2/flutter_tts_module/lib/. "$MODULE/lib/"
+          cp ALISLAH-Android-v2/flutter_tts_module/pubspec.yaml "$MODULE/pubspec.yaml"
           mkdir -p "$MODULE/assets/models"
-
           curl --fail --location --retry 3 --retry-delay 2 \
             "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/mixer128.onnx?download=true" \
             -o "$MODULE/assets/models/mixer128.onnx"
-
           curl --fail --location --retry 3 --retry-delay 2 \
             "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/vocos22.onnx?download=true" \
             -o "$MODULE/assets/models/vocos22.onnx"
-
           curl --fail --location --retry 3 --retry-delay 2 \
             "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/shakkelha.onnx?download=true" \
             -o "$MODULE/assets/models/shakkelha.onnx"
-
           test "$(stat -c%s "$MODULE/assets/models/mixer128.onnx")" -gt 1000000
           test "$(stat -c%s "$MODULE/assets/models/vocos22.onnx")" -gt 10000000
           test "$(stat -c%s "$MODULE/assets/models/shakkelha.onnx")" -gt 1000000
+          (cd "$MODULE" && flutter pub get)
+          echo "Mixer-TTS assets are ready for offline bundling."
 
-          cd "$MODULE"
-          flutter pub get
-
-          echo "Mixer-TTS models downloaded and dependencies resolved."
-
-      - name: Add official Flutter Maven repository
+      - name: Add the official Flutter Maven repository
         shell: bash
         run: |
           set -euo pipefail
-
-          python3 - <<'PYCODE'
+          python3 - <<'PY'
           from pathlib import Path
 
           settings = Path("ALISLAH-Android-v2/settings.gradle")
           content = settings.read_text(encoding="utf-8")
+          old = 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS); repositories { google(); mavenCentral() } }'
+          new = 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS); repositories { google(); mavenCentral(); maven { url "https://storage.googleapis.com/download.flutter.io" } } }'
 
-          flutter_repo = 'maven { url "https://storage.googleapis.com/download.flutter.io" }'
-          current = 'repositories { google(); mavenCentral() }'
-          updated = 'repositories { google(); mavenCentral(); ' + flutter_repo + ' }'
-
-          if flutter_repo in content:
-              print("Flutter Maven repository already exists.")
-
-          elif current in content:
-              settings.write_text(
-                  content.replace(current, updated, 1),
-                  encoding="utf-8"
-              )
-              print("Flutter Maven repository added successfully.")
-
+          if new in content:
+              print("Flutter Maven repository is already configured.")
+          elif old in content:
+              settings.write_text(content.replace(old, new, 1), encoding="utf-8")
+              print("Added official Flutter Maven repository to dependencyResolutionManagement.")
           else:
-              raise SystemExit(
-                  "::error::Unexpected settings.gradle repository configuration."
-              )
-          PYCODE
+              raise SystemExit("::error::Could not safely patch settings.gradle; its repository configuration differs from the inspected source.")
+          PY
+          grep -Fq 'https://storage.googleapis.com/download.flutter.io' ALISLAH-Android-v2/settings.gradle
+          echo "Flutter engine repository configuration verified."
 
-          grep -Fq \
-            'https://storage.googleapis.com/download.flutter.io' \
-            ALISLAH-Android-v2/settings.gradle
-
-          echo "Flutter Maven repository verified."
-
-      - name: Verify permanent signing key
+      - name: Verify and install permanent signing key
         shell: bash
         run: |
           set -euo pipefail
-
           KEYSTORE="ALISLAH-Android-v2/debug.keystore"
-
           test -s "$KEYSTORE"
-
           mkdir -p "$HOME/.android"
-
           cp "$KEYSTORE" "$HOME/.android/debug.keystore"
           chmod 600 "$HOME/.android/debug.keystore"
-
-          ACTUAL_KEY_SHA256="$(
-            keytool -list -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android \
-              -alias androiddebugkey 2>/dev/null |
-            awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}'
-          )"
-
+          ACTUAL_KEY_SHA256="$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey 2>/dev/null \
+            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
           if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::Signing key mismatch."
+            echo "::error::Signing key changed; build stopped to protect update compatibility."
             echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual: $ACTUAL_KEY_SHA256"
+            echo "Actual:   $ACTUAL_KEY_SHA256"
             exit 1
           fi
-
           echo "Permanent ALISLAH signing key verified."
 
-      - name: Verify app signing configuration
+      - name: Confirm app signing configuration
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
           set -euo pipefail
+          grep -Fq "storeFile rootProject.file('debug.keystore')" app/build.gradle
+          grep -Fq "signingConfig signingConfigs.alislah" app/build.gradle
+          echo "The debug variant is configured to use the preserved ALISLAH keystore."
 
-          grep -Fq \
-            "storeFile rootProject.file('debug.keystore')" \
-            app/build.gradle
-
-          grep -Fq \
-            "signingConfig signingConfigs.alislah" \
-            app/build.gradle
-
-          echo "App signing configuration verified."
-
-      - name: Build ALISLAH APK
+      - name: Build APK from a clean state
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
           set -euo pipefail
-
-          gradle --no-daemon \
-            --no-build-cache \
-            clean assembleDebug \
-            --rerun-tasks
-
+          gradle --no-daemon --no-build-cache clean assembleDebug --rerun-tasks
           gradle --no-daemon signingReport
 
-      - name: Verify APK signature
+      - name: Verify APK signature before publishing
         shell: bash
         run: |
           set -euo pipefail
-
           APK="ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk"
-
           test -s "$APK"
-
-          APKSIGNER="$(
-            find "$ANDROID_HOME/build-tools" \
-              -type f -name apksigner -print |
-            sort -V | tail -n 1
-          )"
-
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           if [ -z "$APKSIGNER" ]; then
-            echo "::error::apksigner not found."
+            echo "::error::apksigner not found; refusing to publish unchecked APK."
             exit 1
           fi
-
-          "$APKSIGNER" verify --verbose --print-certs "$APK" \
-            | tee "$RUNNER_TEMP/alislah-apk-signature.txt"
-
-          ACTUAL_APK_SHA256="$(
-            sed -n \
-              's/.*certificate SHA-256 digest: //p' \
-              "$RUNNER_TEMP/alislah-apk-signature.txt" |
-            head -n 1 |
-            tr -d ':\r\n ' |
-            tr '[:lower:]' '[:upper:]'
-          )"
-
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-apk-signature.txt"
+          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-apk-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
           if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::APK signature mismatch."
+            echo "::error::APK signature mismatch; artifact will not be published."
             echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual: $ACTUAL_APK_SHA256"
+            echo "Actual:   $ACTUAL_APK_SHA256"
             exit 1
           fi
+          echo "APK signature verified."
 
-          echo "APK signature verified successfully."
-
-      - name: Upload ALISLAH APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ALISLAH-all-in-one-apk
