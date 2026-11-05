@@ -90,43 +90,137 @@ jobs:
           rm -rf ALISLAH-Android-v2/flutter_tts_generated
           echo "Mixer-TTS has been excluded from this APK build."
 
-      - name: Remove stale Flutter TTS Gradle links
+      - name: Remove Mixer-TTS and Flutter integration cleanly
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT="ALISLAH-Android-v2"
-          SETTINGS="$PROJECT/settings.gradle"
-          test -s "$SETTINGS"
-          # The source archive still contains an old settings.gradle include for
-          # flutter_tts_generated. Since Mixer-TTS is intentionally excluded,
-          # remove only those obsolete Gradle include/evaluate lines as well.
-          python3 - "$PROJECT" <<'PYFIX'
+          python3 - <<'PYFIX'
           from pathlib import Path
-          import re, sys
-          root = Path(sys.argv[1])
-          settings = root / "settings.gradle"
-          lines = settings.read_text(encoding="utf-8").splitlines()
-          kept = [line for line in lines if not re.search(r"flutter_tts_generated|include_flutter\.groovy", line)]
-          settings.write_text("\n".join(kept) + "\n", encoding="utf-8")
+          import re
+          root = Path('ALISLAH-Android-v2')
 
-          # Remove a direct Gradle project dependency if the app declares one.
-          for gradle_file in root.rglob("*.gradle"):
-              if gradle_file == settings:
-                  continue
-              original = gradle_file.read_text(encoding="utf-8")
-              filtered = [line for line in original.splitlines()
-                          if not re.search(r"project\s*\(\s*['\"]:flutter_tts_generated['\"]\s*\)", line)]
-              updated = "\n".join(filtered) + "\n"
-              if updated != original:
-                  gradle_file.write_text(updated, encoding="utf-8")
+          # Remove the obsolete Flutter module include from Gradle settings.
+          settings = root / 'settings.gradle'
+          lines = settings.read_text(encoding='utf-8').splitlines()
+          kept = [line for line in lines if not re.search(
+              r'flutter_tts_generated|include_flutter\.groovy|include\s*\(?\s*[\'\"]:flutter[\'\"]', line
+          )]
+          settings.write_text('\n'.join(line for line in kept if 'CI workflow generates this Flutter module' not in line and 'setBinding(new Binding' not in line) + '\n', encoding='utf-8')
+
+          # The app's only Gradle dependency on Flutter is the Mixer-TTS engine.
+          app_gradle = root / 'app/build.gradle'
+          text = app_gradle.read_text(encoding='utf-8')
+          text = re.sub(r"(?m)^\s*implementation\s+project\s*\(\s*['\"]:flutter['\"]\s*\)\s*;?\s*$\n?", '', text)
+          app_gradle.write_text(text, encoding='utf-8')
+
+          # Remove Flutter engine imports, state, and lifecycle methods from MainActivity.
+          main = root / 'app/src/main/java/dz/alislah/app/MainActivity.kt'
+          s = main.read_text(encoding='utf-8')
+          s = re.sub(r'(?m)^import io\.flutter\.[^\n]*\n', '', s)
+          s = re.sub(r'(?m)^\s*private var mixerFlutterEngine:.*\n', '', s)
+          s = re.sub(r'(?m)^\s*private var mixerTtsChannel:.*\n', '', s)
+          s = re.sub(r'(?m)^\s*private var mixerTtsReady\s*=.*\n', '', s)
+          s = re.sub(r'(?m)^\s*private var pendingMixerTtsText:.*\n', '', s)
+          start = s.find('    private fun dispatchMixerVoiceStatus(')
+          end = s.find('    override fun onCreate(', start)
+          if start != -1 and end != -1:
+              s = s[:start] + s[end:]
+          s = re.sub(r'(?m)^\s*try \{ stopMixerTts\(\); mixerFlutterEngine\?\.destroy\(\) \} catch \(_:\s*Exception\) \{ \}\n', '', s)
+          s = re.sub(r'(?m)^\s*mixerFlutterEngine = null\n', '', s)
+          s = re.sub(r'(?m)^\s*mixerTtsChannel = null\n', '', s)
+          s = re.sub(r'(?m)^\s*mixerTtsReady = false\n', '', s)
+          # Replace the bridge methods that previously invoked Mixer-TTS with the existing native TTS service.
+          start = s.find('        @JavascriptInterface fun speakDisplayedAyah(text: String)')
+          end = s.find('        @JavascriptInterface fun playAdhanTest()', start)
+          if start == -1 or end == -1:
+              raise SystemExit('Could not locate assistant voice bridge block in MainActivity.kt')
+          bridge = '''        private fun speakWithExistingAssistant(text: String) {
+                      val clean = text.trim().take(700)
+                      if (clean.isBlank()) return
+                      val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply {
+                          action = FloatingBubbleService.ACTION_SPEAK_TEXT
+                          putExtra(FloatingBubbleService.EXTRA_SPEAK_TEXT, clean)
+                      }
+                      try {
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+                      } catch (_: Exception) { }
+                  }
+                  @JavascriptInterface fun speakDisplayedAyah(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
+                  @JavascriptInterface fun speakAssistantText(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
+                  @JavascriptInterface fun stopAssistantSpeech() { runOnUiThread {
+                      try {
+                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_STOP_SPEECH }
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+                      } catch (_: Exception) { }
+                  } }
+                  @JavascriptInterface fun setAssistantVoiceMode(mode: String) { prefs.edit().putString("voiceMode", if (mode == "text" || mode == "voice" || mode == "both") mode else "both").apply() }
+                  @JavascriptInterface fun testAssistantVoice() { runOnUiThread {
+                      try {
+                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_SPEAK_TEST }
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+                      } catch (_: Exception) { }
+                  } }
+          '''
+          s = s[:start] + bridge + s[end:]
+          # Keep the legacy voice as the only selectable engine in this build.
+          s = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
+                     '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs.edit().putString("assistantVoiceEngine", "old").apply() }', s)
+          main.write_text(s, encoding='utf-8')
+
+
+          # Force the floating assistant to use its existing Android TTS engine (with local fallback).
+          service = root / 'app/src/main/java/dz/alislah/app/FloatingBubbleService.kt'
+          svc = service.read_text(encoding='utf-8')
+          start = svc.find('        // The selected engine controls assistant speech and displayed Quran verses alike.')
+          end = svc.find('    }\n\n    private fun speakWithAndroidTts', start)
+          if start != -1 and end != -1:
+              svc = svc[:start] + '        speakWithAndroidTts(speechText, quranLike)\n' + svc[end:]
+          svc = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
+                       '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs().edit().putString("assistantVoiceEngine", "old").apply() }', svc)
+          svc = svc.replace('assistantWebView?.evaluateJavascript("window.AlishlahNeuralVoice&&window.AlishlahNeuralVoice.stop()", null); stopReminderSpeech()', 'stopReminderSpeech()')
+          start = svc.find('        @JavascriptInterface fun onNeuralSpeechResult(success: Boolean, detail: String)')
+          end = svc.find('        @JavascriptInterface fun setAssistantVoiceMode(', start)
+          if start != -1 and end != -1:
+              svc = svc[:start] + svc[end:]
+          service.write_text(svc, encoding='utf-8')
+
+          # Remove the obsolete neural engine script from the app page.
+          index = root / 'app/src/main/assets/index.html'
+          html = index.read_text(encoding='utf-8')
+          html = html.replace('<script src="js/neural-voice.js"></script>', '')
+          index.write_text(html, encoding='utf-8')
+
+          # Make the voice settings UI expose only the existing native assistant.
+          js = root / 'app/src/main/assets/js/main.js'
+          js_text = js.read_text(encoding='utf-8')
+          js_text = js_text.replace('<option value="old">المساعد القديم (محلي)</option><option value="neural">المساعد العربي العصبي الجديد (محلي)</option>',
+                                    '<option value="old">المساعد الحالي (محلي)</option>')
+          js_text = js_text.replace("engineSelect.value=data.settings.assistantVoiceEngine||'neural';", "engineSelect.value='old';data.settings.assistantVoiceEngine='old';")
+          js_text = js_text.replace("engineSelect.value==='neural'?'المحرك المختار: العصبي الجديد — يعمل محليًا دون إنترنت':'المحرك المختار: القديم — يعمل محليًا'", "'المساعد الحالي يعمل محليًا'")
+          js.write_text(js_text, encoding='utf-8')
+
+          # Delete the now-unused Mixer-TTS assets/modules.
+          for rel in ('flutter_tts_module', 'flutter_tts_generated'):
+              p = root / rel
+              if p.exists():
+                  import shutil
+                  shutil.rmtree(p)
+          voice_js = root / 'app/src/main/assets/js/neural-voice.js'
+          if voice_js.exists():
+              voice_js.unlink()
+
+          # Fail early if Gradle or native source still references the removed Flutter engine.
+          checks = [settings, app_gradle, main, service, index, js]
+          patterns = re.compile(r'flutter_tts_generated|include_flutter\.groovy|project\s*\(\s*[\'\"]:flutter[\'\"]\s*\)|io\.flutter\.|mixerFlutterEngine|mixerTtsChannel|mixerTtsReady|speakMixerTts|stopMixerTts|onNeuralSpeechResult|Mixer-TTS', re.I)
+          leftovers = []
+          for f in checks:
+              for n, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
+                  if patterns.search(line):
+                      leftovers.append(f'{f}:{n}:{line.strip()}')
+          if leftovers:
+              raise SystemExit('Mixer/Flutter references remain:\n' + '\n'.join(leftovers))
+          print('Mixer-TTS removed: Gradle settings/dependency, native Flutter engine bridge, and neural voice UI.')
           PYFIX
-          echo "Remaining Flutter TTS Gradle references (should be empty):"
-          if grep -RniE 'flutter_tts_generated|include_flutter\.groovy' \
-              "$PROJECT/settings.gradle" "$PROJECT/app/build.gradle"; then
-            echo "::error::A stale Flutter TTS Gradle reference remains."
-            exit 1
-          fi
-          echo "Stale Flutter TTS Gradle links removed."
 
       - name: Verify and install permanent signing key
         shell: bash
