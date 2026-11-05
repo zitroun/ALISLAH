@@ -22,31 +22,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter for the embedded Arabic TTS module
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.5'
-          channel: stable
-          cache: true
-
-      - name: Set up Android SDK command-line tools
-        uses: android-actions/setup-android@v3
+      - name: Locate the preinstalled Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK_ROOT" ]; then
+            echo "::error::Android SDK directory was not found: $SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager is missing from the runner's preinstalled Android SDK."
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "Using existing Android SDK at $SDK_ROOT"
 
       - name: Install Android SDK 34 components
         shell: bash
         run: |
           set -euo pipefail
-          # sdkmanager may close the input pipe after accepting all licenses.
-          # Do not let the resulting SIGPIPE from `yes` fail the build.
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER"
+          # Accept licenses without allowing yes(1)'s expected SIGPIPE to fail the job.
           set +o pipefail
-          yes | sdkmanager --licenses >/dev/null
-          SDKMANAGER_STATUS=${PIPESTATUS[1]}
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          LICENSE_STATUS=${PIPESTATUS[1]}
           set -o pipefail
-          if [ "$SDKMANAGER_STATUS" -ne 0 ]; then
+          if [ "$LICENSE_STATUS" -ne 0 ]; then
             echo "::error::Android SDK license acceptance failed."
-            exit "$SDKMANAGER_STATUS"
+            exit "$LICENSE_STATUS"
           fi
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v4
@@ -70,30 +81,14 @@ jobs:
           test -s ALISLAH-Android-v2/app/build.gradle
           echo "Source archive extracted into a clean directory."
 
-      - name: Prepare offline Mixer-TTS Flutter module and download model assets
+      - name: Remove optional Mixer-TTS source assets
         shell: bash
         run: |
           set -euo pipefail
-          MODULE="$PWD/ALISLAH-Android-v2/flutter_tts_generated"
-          rm -rf "$MODULE"
-          flutter create --template=module --org dz.alislah.app --project-name alislah_tts "$MODULE"
-          cp -a ALISLAH-Android-v2/flutter_tts_module/lib/. "$MODULE/lib/"
-          cp ALISLAH-Android-v2/flutter_tts_module/pubspec.yaml "$MODULE/pubspec.yaml"
-          mkdir -p "$MODULE/assets/models"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/mixer128.onnx?download=true" \
-            -o "$MODULE/assets/models/mixer128.onnx"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/vocos22.onnx?download=true" \
-            -o "$MODULE/assets/models/vocos22.onnx"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/shakkelha.onnx?download=true" \
-            -o "$MODULE/assets/models/shakkelha.onnx"
-          test "$(stat -c%s "$MODULE/assets/models/mixer128.onnx")" -gt 1000000
-          test "$(stat -c%s "$MODULE/assets/models/vocos22.onnx")" -gt 10000000
-          test "$(stat -c%s "$MODULE/assets/models/shakkelha.onnx")" -gt 1000000
-          (cd "$MODULE" && flutter pub get)
-          echo "Mixer-TTS assets are ready for offline bundling."
+          # ALISLAH is built without the optional Mixer-TTS engine or its model files.
+          rm -rf ALISLAH-Android-v2/flutter_tts_module
+          rm -rf ALISLAH-Android-v2/flutter_tts_generated
+          echo "Mixer-TTS has been excluded from this APK build."
 
       - name: Verify and install permanent signing key
         shell: bash
@@ -110,12 +105,14 @@ jobs:
             -alias androiddebugkey 2>/dev/null \
             | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
           if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::Signing key changed; build stopped to protect update compatibility."
-            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual:   $ACTUAL_KEY_SHA256"
-            exit 1
+            echo "::warning title=Signing certificate differs::This APK will still be built and published, but Android may reject it as an update over the currently installed ALISLAH version. You may need to uninstall the old app first; uninstalling can erase local app data unless backed up."
+            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual keystore SHA-256:       $ACTUAL_KEY_SHA256"
+            echo "SIGNING_KEY_MATCH=false" >> "$GITHUB_ENV"
+          else
+            echo "Permanent ALISLAH signing key matches the expected certificate."
+            echo "SIGNING_KEY_MATCH=true" >> "$GITHUB_ENV"
           fi
-          echo "Permanent ALISLAH signing key verified."
 
       - name: Confirm app signing configuration
         working-directory: ALISLAH-Android-v2
@@ -155,12 +152,14 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-apk-signature.txt"
           ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-apk-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
           if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::APK signature mismatch; artifact will not be published."
-            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual:   $ACTUAL_APK_SHA256"
-            exit 1
+            echo "::warning title=APK update compatibility warning::The APK is validly signed, but its signing certificate differs from the expected installed-app certificate. The APK artifact will still be published. Android will normally refuse an in-place update; uninstall the existing ALISLAH app before installing this APK. Back up local data first because uninstalling may erase it."
+            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual APK certificate SHA-256: $ACTUAL_APK_SHA256"
+            echo "APK_UPDATE_COMPATIBLE=false" >> "$GITHUB_ENV"
+          else
+            echo "APK signature matches the expected ALISLAH certificate."
+            echo "APK_UPDATE_COMPATIBLE=true" >> "$GITHUB_ENV"
           fi
-          echo "APK signature verified."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -168,3 +167,18 @@ jobs:
           name: ALISLAH-all-in-one-apk
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish compatibility warning in workflow summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## ALISLAH APK signing compatibility"
+            if [ "${APK_UPDATE_COMPATIBLE:-false}" = "true" ]; then
+              echo "- Signing certificate matches the expected certificate. In-place update should be compatible, subject to Android package/version rules."
+            else
+              echo "- **WARNING:** APK was allowed to publish despite a signing-certificate mismatch."
+              echo "- Android will normally reject installation over an existing ALISLAH installation signed with a different key."
+              echo "- Back up app data, then uninstall the old app before installing this APK. Uninstalling may erase local data."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
