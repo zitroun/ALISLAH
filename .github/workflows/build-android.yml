@@ -90,6 +90,44 @@ jobs:
           rm -rf ALISLAH-Android-v2/flutter_tts_generated
           echo "Mixer-TTS has been excluded from this APK build."
 
+      - name: Remove stale Flutter TTS Gradle links
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT="ALISLAH-Android-v2"
+          SETTINGS="$PROJECT/settings.gradle"
+          test -s "$SETTINGS"
+          # The source archive still contains an old settings.gradle include for
+          # flutter_tts_generated. Since Mixer-TTS is intentionally excluded,
+          # remove only those obsolete Gradle include/evaluate lines as well.
+          python3 - "$PROJECT" <<'PYFIX'
+          from pathlib import Path
+          import re, sys
+          root = Path(sys.argv[1])
+          settings = root / "settings.gradle"
+          lines = settings.read_text(encoding="utf-8").splitlines()
+          kept = [line for line in lines if not re.search(r"flutter_tts_generated|include_flutter\.groovy", line)]
+          settings.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+          # Remove a direct Gradle project dependency if the app declares one.
+          for gradle_file in root.rglob("*.gradle"):
+              if gradle_file == settings:
+                  continue
+              original = gradle_file.read_text(encoding="utf-8")
+              filtered = [line for line in original.splitlines()
+                          if not re.search(r"project\s*\(\s*['\"]:flutter_tts_generated['\"]\s*\)", line)]
+              updated = "\n".join(filtered) + "\n"
+              if updated != original:
+                  gradle_file.write_text(updated, encoding="utf-8")
+          PYFIX
+          echo "Remaining Flutter TTS Gradle references (should be empty):"
+          if grep -RniE 'flutter_tts_generated|include_flutter\.groovy' \
+              "$PROJECT/settings.gradle" "$PROJECT/app/build.gradle"; then
+            echo "::error::A stale Flutter TTS Gradle reference remains."
+            exit 1
+          fi
+          echo "Stale Flutter TTS Gradle links removed."
+
       - name: Verify and install permanent signing key
         shell: bash
         run: |
