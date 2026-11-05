@@ -29,17 +29,24 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v3
 
       - name: Install Android SDK 34 components
         shell: bash
         run: |
           set -euo pipefail
+          # sdkmanager may close the input pipe after accepting all licenses.
+          # Do not let the resulting SIGPIPE from `yes` fail the build.
+          set +o pipefail
           yes | sdkmanager --licenses >/dev/null
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          SDKMANAGER_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          if [ "$SDKMANAGER_STATUS" -ne 0 ]; then
+            echo "::error::Android SDK license acceptance failed."
+            exit "$SDKMANAGER_STATUS"
+          fi
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v4
@@ -55,11 +62,12 @@ jobs:
             echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
+          # Remove any checked-out/stale source tree before extracting the selected archive.
+          # This prevents Gradle from compiling leftover files or reusing an old APK.
           rm -rf ALISLAH-Android-v2
           unzip -o "${ZIP_FILES[0]}"
           test -s ALISLAH-Android-v2/debug.keystore
           test -s ALISLAH-Android-v2/app/build.gradle
-          test -s ALISLAH-Android-v2/settings.gradle
           echo "Source archive extracted into a clean directory."
 
       - name: Prepare offline Mixer-TTS Flutter module and download model assets
@@ -86,29 +94,6 @@ jobs:
           test "$(stat -c%s "$MODULE/assets/models/shakkelha.onnx")" -gt 1000000
           (cd "$MODULE" && flutter pub get)
           echo "Mixer-TTS assets are ready for offline bundling."
-
-      - name: Add the official Flutter Maven repository
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          settings = Path("ALISLAH-Android-v2/settings.gradle")
-          content = settings.read_text(encoding="utf-8")
-          old = 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS); repositories { google(); mavenCentral() } }'
-          new = 'dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS); repositories { google(); mavenCentral(); maven { url "https://storage.googleapis.com/download.flutter.io" } } }'
-
-          if new in content:
-              print("Flutter Maven repository is already configured.")
-          elif old in content:
-              settings.write_text(content.replace(old, new, 1), encoding="utf-8")
-              print("Added official Flutter Maven repository to dependencyResolutionManagement.")
-          else:
-              raise SystemExit("::error::Could not safely patch settings.gradle; its repository configuration differs from the inspected source.")
-          PY
-          grep -Fq 'https://storage.googleapis.com/download.flutter.io' ALISLAH-Android-v2/settings.gradle
-          echo "Flutter engine repository configuration verified."
 
       - name: Verify and install permanent signing key
         shell: bash
@@ -140,6 +125,13 @@ jobs:
           grep -Fq "storeFile rootProject.file('debug.keystore')" app/build.gradle
           grep -Fq "signingConfig signingConfigs.alislah" app/build.gradle
           echo "The debug variant is configured to use the preserved ALISLAH keystore."
+
+      - name: Run ALISLAH source checks
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/prayer-calc.test.js
 
       - name: Build APK from a clean state
         working-directory: ALISLAH-Android-v2
