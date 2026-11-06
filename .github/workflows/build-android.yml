@@ -59,18 +59,18 @@ jobs:
           fi
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Set up Gradle 8.2.1
+      - name: Set up Gradle 8.14.6
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.2.1'
+          gradle-version: '8.14.6'
 
       - name: Unpack exactly one Android source archive
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.5-bubble-gradle-fixed.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.5-bubble-gradle-fixed.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
           # Remove any checked-out/stale source tree before extracting the selected archive.
@@ -557,6 +557,17 @@ jobs:
         run: |
           set -euo pipefail
           node tests/prayer-calc.test.js
+
+      - name: Verify compatible Android build toolchain
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "id 'com.android.application' version '8.11.1' apply false" build.gradle
+          grep -Fq "id 'org.jetbrains.kotlin.android' version '2.2.21' apply false" build.gradle
+          grep -Fq "versionCode 36" app/build.gradle
+          grep -Fq "versionName '2.1.4.5'" app/build.gradle
+          echo "AGP 8.11.1, Kotlin 2.2.21 and Gradle 8.14.6 configuration verified."
 
       - name: Build APK from a clean state
         working-directory: ALISLAH-Android-v2
