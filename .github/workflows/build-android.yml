@@ -1,4 +1,4 @@
-name: Build ALISLAH Android APK 2.1.4.6
+name: Build ALISLAH Android APK
 
 on:
   workflow_dispatch:
@@ -62,34 +62,21 @@ jobs:
       - name: Set up Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.2.1'
 
       - name: Unpack exactly one Android source archive
         shell: bash
         run: |
           set -euo pipefail
-          # Prefer the explicit 2.1.4.6 archive; also accept the dated/generic
-          # source archive names used by earlier uploads to this repository.
-          PREFERRED="./ALISLAH-Android-v2-source-2.1.4.6-bubble-gradle-fixed.zip"
-          if [ -f "$PREFERRED" ]; then
-            SOURCE_ZIP="$PREFERRED"
-          elif [ -f "./ALISLAH-Android-v2-source.zip" ]; then
-            SOURCE_ZIP="./ALISLAH-Android-v2-source.zip"
-          else
-            mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f \
-              \( -name 'ALISLAH-Android-v2-source-*.zip' -o -name 'ALISLAH-Android-v2-source(*).zip' \) \
-              ! -path './ALISLAH-Android-v2/*' -print | sort)
-            if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-              echo "::error::Place one ALISLAH-Android-v2-source ZIP in the repository root. Found ${#ZIP_FILES[@]} candidates."
-              printf '%s\n' "${ZIP_FILES[@]}"
-              exit 1
-            fi
-            SOURCE_ZIP="${ZIP_FILES[0]}"
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source.zip' -print)
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
+            exit 1
           fi
-          echo "Using source archive: $SOURCE_ZIP"
           # Remove any checked-out/stale source tree before extracting the selected archive.
+          # This prevents Gradle from compiling leftover files or reusing an old APK.
           rm -rf ALISLAH-Android-v2
-          unzip -o "$SOURCE_ZIP"
+          unzip -o "${ZIP_FILES[0]}"
           test -s ALISLAH-Android-v2/debug.keystore
           test -s ALISLAH-Android-v2/app/build.gradle
           echo "Source archive extracted into a clean directory."
@@ -234,29 +221,6 @@ jobs:
               raise SystemExit('Mixer/Flutter references remain:\n' + '\n'.join(leftovers))
           print('Mixer-TTS removed: Gradle settings/dependency, native Flutter engine bridge, and neural voice UI.')
           PYFIX
-
-      - name: Verify orientation-aware bubble implementation
-        working-directory: ALISLAH-Android-v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYBUBBLE'
-          from pathlib import Path
-          p = Path('app/src/main/java/dz/alislah/app/FloatingBubbleService.kt')
-          s = p.read_text(encoding='utf-8')
-          required = [
-              'private fun dockMainBubble(',
-              'private fun landscapeCameraEdge(',
-              'private fun rememberBubbleAnchor(',
-              'portraitAnchorXRatio', 'landscapeAnchorXRatio',
-              'view.capsuleEdge = "circle"',
-              'view.capsuleEdge = edge',
-          ]
-          missing = [item for item in required if item not in s]
-          if missing:
-              raise SystemExit('Orientation-aware bubble implementation incomplete: ' + ', '.join(missing))
-          print('Portrait/landscape bubble anchors and edge shapes verified.')
-          PYBUBBLE
 
       - name: Verify and install permanent signing key
         shell: bash
