@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
-      GRADLE_USER_HOME: ${{ runner.temp }}/alislah-gradle-home
 
     steps:
       - name: Checkout repository
@@ -59,6 +58,12 @@ jobs:
             exit "$LICENSE_STATUS"
           fi
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Configure isolated Gradle cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
 
       - name: Prepare isolated Gradle cache
         shell: bash
