@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
+      GRADLE_USER_HOME: ${{ runner.temp }}/alislah-gradle-home
 
     steps:
       - name: Checkout repository
@@ -59,10 +60,19 @@ jobs:
           fi
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Set up Gradle 8.2.1
+      - name: Prepare isolated Gradle cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$GRADLE_USER_HOME"
+          mkdir -p "$GRADLE_USER_HOME"
+          echo "Using a fresh Gradle cache at $GRADLE_USER_HOME"
+
+      - name: Set up Gradle 8.13 (required by Android Gradle Plugin 8.11.1)
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.2.1'
+          gradle-version: '8.13'
+          cache-disabled: true
 
       - name: Unpack exactly one Android source archive
         shell: bash
@@ -222,6 +232,302 @@ jobs:
           print('Mixer-TTS removed: Gradle settings/dependency, native Flutter engine bridge, and neural voice UI.')
           PYFIX
 
+      - name: Correct floating bubble layout in portrait and landscape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYBUBBLE'
+          from pathlib import Path
+          p = Path('ALISLAH-Android-v2/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt')
+          s = p.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              s = s.replace(old, new, 1)
+
+          replace_once('''    private var lastDisplayRotation = Surface.ROTATION_0
+              private var orbitRotation = 0.0
+          ''', '''    private var lastDisplayRotation = Surface.ROTATION_0
+              private var lastConfigOrientation = Configuration.ORIENTATION_UNDEFINED
+              // Keep independent anchors for portrait and landscape so a round trip restores
+              // the exact place instead of rotating stale pixel coordinates into the new layout.
+              private var portraitAnchorXRatio: Float? = null
+              private var portraitAnchorYRatio: Float? = null
+              private var landscapeAnchorXRatio: Float? = null
+              private var landscapeAnchorYRatio: Float? = null
+              private var orbitRotation = 0.0
+          ''', 'orientation state')
+
+          # Make the orbit fit the short axis of a landscape display.
+          replace_once('''        val item = (52 * d).toInt()
+                  val radius = (94 * d).toInt()
+                  val size = (radius * 2 + item + 12*d).toInt()
+          ''', '''        val item = (52 * d).toInt()
+                  val (displayW, displayH) = realScreenSize()
+                  val safeRadius = (minOf(displayW, displayH) / 2 - item / 2 - (8*d).toInt()).coerceAtLeast((42*d).toInt())
+                  val radius = minOf((94*d).toInt(), safeRadius)
+                  val size = (radius * 2 + item + 12*d).toInt()
+          ''', 'responsive side orbit')
+
+          # Extend initial placement to use bottom half-circle in landscape and camera capsule in portrait.
+          replace_once('''        val circleSize = (58 * d).toInt()
+                  val cameraX = cameraCenterX(screenW)
+          ''', '''        val circleSize = (58 * d).toInt()
+                  val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                  lastConfigOrientation = resources.configuration.orientation
+                  val cameraX = cameraCenterX(screenW)
+          ''', 'initial orientation')
+          replace_once('''        val view = MainBubbleView(this).apply {
+                      dockedAtCamera = true
+                      contentDescription = "فقاعة ALISLAH الخضراء؛ ضغطة للفقاعات الجانبية وضغطتان لفتح التطبيق"
+                      elevation = 18 * d
+                  }
+          ''', '''        val view = MainBubbleView(this).apply {
+                      dockedAtCamera = !isLandscape
+                      contentDescription = "فقاعة ALISLAH الخضراء؛ ضغطة للفقاعات الجانبية وضغطتان لفتح التطبيق"
+                      elevation = 18 * d
+                  }
+          ''', 'initial bubble shape')
+          replace_once('''        val lp = WindowManager.LayoutParams(dockWidth, dockHeight, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
+                      gravity = Gravity.TOP or Gravity.LEFT
+                      x = (cameraX - dockWidth / 2).coerceIn(0, (screenW - dockWidth).coerceAtLeast(0))
+                      y = 0
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                      }
+                  }
+          ''', '''        val initialWidth = if (isLandscape) circleSize else dockWidth
+                  val initialHeight = if (isLandscape) circleSize else dockHeight
+                  val lp = WindowManager.LayoutParams(initialWidth, initialHeight, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
+                      gravity = Gravity.TOP or Gravity.LEFT
+                      if (isLandscape) {
+                          x = (screenW - circleSize) / 2
+                          y = screenH - circleSize / 2 // bottom half-circle, clipped by the physical screen edge
+                      } else {
+                          x = (cameraX - dockWidth / 2).coerceIn(0, (screenW - dockWidth).coerceAtLeast(0))
+                          y = 0
+                      }
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                      }
+                  }
+                  rememberAnchorPosition(lastConfigOrientation, lp, screenW, screenH)
+          ''', 'initial layout params')
+
+          # Replace drag release snapping with orientation-aware edge snapping.
+          replace_once('''                    if (dragged) {
+                                  val (currentW, currentH) = realScreenSize()
+                                  val density = resources.displayMetrics.density
+                                  val centerX = lp.x + lp.width / 2
+                                  val topZone = (76 * density).toInt()
+                                  val targetCameraX = cameraCenterX(currentW)
+                                  val nearTopCamera = lp.y <= topZone && kotlin.math.abs(centerX - targetCameraX) <= (90 * density).toInt()
+                                  if (nearTopCamera) {
+                                      view.dockedAtCamera = true
+                                      lp.width = dockWidth; lp.height = dockHeight
+                                      lp.x = (targetCameraX - dockWidth / 2).coerceIn(0, (currentW - dockWidth).coerceAtLeast(0))
+                                      lp.y = 0
+                                  } else {
+                                      view.dockedAtCamera = false
+                                      lp.width = circleSize; lp.height = circleSize
+                                      val onLeft = centerX < currentW / 2
+                                      lp.x = if (onLeft) -(circleSize / 2) else currentW - (circleSize / 2)
+                                      lp.y = lp.y.coerceIn(0, (currentH-circleSize).coerceAtLeast(0))
+                                  }
+                                  v.requestLayout()
+                                  try { windowManager.updateViewLayout(v, lp) } catch (_: Exception) {}
+                                  v.post { if (quickMenu != null) syncQuickMenuToAnchor(lp); syncReminderOverlay(lp); syncAdhanMuteBubble() }
+          ''', '''                    if (dragged) {
+                                  val (currentW, currentH) = realScreenSize()
+                                  val density = resources.displayMetrics.density
+                                  val centerX = lp.x + lp.width / 2
+                                  val centerY = lp.y + lp.height / 2
+                                  val topZone = (76 * density).toInt()
+                                  val targetCameraX = cameraCenterX(currentW)
+                                  val nearTopCamera = lp.y <= topZone && kotlin.math.abs(centerX - targetCameraX) <= (90 * density).toInt()
+                                  if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                                      val distances = listOf(
+                                          "top" to centerY,
+                                          "bottom" to (currentH - centerY),
+                                          "left" to centerX,
+                                          "right" to (currentW - centerX)
+                                      )
+                                      when (distances.minByOrNull { it.second }?.first) {
+                                          "top" -> {
+                                              view.dockedAtCamera = true // top half-capsule in landscape
+                                              lp.width = (84 * density).toInt(); lp.height = dockHeight
+                                              lp.x = (centerX - lp.width / 2).coerceIn(0, (currentW - lp.width).coerceAtLeast(0)); lp.y = 0
+                                          }
+                                          "bottom" -> {
+                                              view.dockedAtCamera = false // bottom half-circle in landscape
+                                              lp.width = circleSize; lp.height = circleSize
+                                              lp.x = (centerX - circleSize / 2).toInt().coerceIn(0, (currentW - circleSize).coerceAtLeast(0))
+                                              lp.y = currentH - circleSize / 2
+                                          }
+                                          "left" -> {
+                                              view.dockedAtCamera = false; lp.width = circleSize; lp.height = circleSize
+                                              lp.x = -(circleSize / 2); lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH - circleSize).coerceAtLeast(0))
+                                          }
+                                          else -> {
+                                              view.dockedAtCamera = false; lp.width = circleSize; lp.height = circleSize
+                                              lp.x = currentW - circleSize / 2; lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH - circleSize).coerceAtLeast(0))
+                                          }
+                                      }
+                                  } else if (nearTopCamera) {
+                                      view.dockedAtCamera = true
+                                      lp.width = dockWidth; lp.height = dockHeight
+                                      lp.x = (targetCameraX - dockWidth / 2).coerceIn(0, (currentW - dockWidth).coerceAtLeast(0))
+                                      lp.y = 0
+                                  } else {
+                                      view.dockedAtCamera = false
+                                      lp.width = circleSize; lp.height = circleSize
+                                      val onLeft = centerX < currentW / 2
+                                      lp.x = if (onLeft) -(circleSize / 2) else currentW - (circleSize / 2)
+                                      lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH-circleSize).coerceAtLeast(0))
+                                  }
+                                  rememberAnchorPosition(resources.configuration.orientation, lp, currentW, currentH)
+                                  v.requestLayout()
+                                  try { windowManager.updateViewLayout(v, lp) } catch (_: Exception) {}
+                                  v.post { if (quickMenu != null) syncQuickMenuToAnchor(lp); syncReminderOverlay(lp); syncAdhanMuteBubble() }
+          ''', 'orientation-aware drag snapping')
+
+          # Add the anchor persistence helper before display configuration callback.
+          replace_once('''    private var pendingDisplayReflow: Runnable? = null
+
+              override fun onConfigurationChanged(newConfig: Configuration) {
+          ''', '''    private fun rememberAnchorPosition(orientation: Int, lp: WindowManager.LayoutParams, screenW: Int, screenH: Int) {
+                  if (screenW <= 0 || screenH <= 0) return
+                  val x = ((lp.x + lp.width / 2f) / screenW).coerceIn(0f, 1f)
+                  val y = ((lp.y + lp.height / 2f) / screenH).coerceIn(0f, 1f)
+                  if (orientation == Configuration.ORIENTATION_PORTRAIT) {
+                      portraitAnchorXRatio = x; portraitAnchorYRatio = y
+                  } else if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                      landscapeAnchorXRatio = x; landscapeAnchorYRatio = y
+                  }
+              }
+
+              private var pendingDisplayReflow: Runnable? = null
+
+              override fun onConfigurationChanged(newConfig: Configuration) {
+          ''', 'anchor helper')
+
+          # Replace the whole reflow method with orientation-stable geometry.
+          start = s.find('    private fun applyDisplayConfiguration(newConfig: Configuration) {')
+          end = s.find('\n    override fun onDestroy() {', start)
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate applyDisplayConfiguration method')
+          new_method = '''    private fun applyDisplayConfiguration(newConfig: Configuration) {
+                  val main = bubble ?: return
+                  val lp = params ?: return
+                  val wasMenuVisible = quickMenu != null
+                  val openCommand = activeOverlayCommand
+                  hideQuickMenu()
+                  orbitRotation = 0.0
+
+                  val d = resources.displayMetrics.density
+                  val (newW, newH) = realScreenSize()
+                  val oldW = lastBubbleScreenWidth.takeIf { it > 0 } ?: newW
+                  val oldH = lastBubbleScreenHeight.takeIf { it > 0 } ?: newH
+                  val oldOrientation = lastConfigOrientation
+                  val newOrientation = newConfig.orientation
+                  val oldRotation = lastDisplayRotation
+                  val newRotation = try { windowManager.defaultDisplay.rotation } catch (_: Exception) { oldRotation }
+                  val rotationDelta = (newRotation - oldRotation + 4) % 4
+
+                  // Capture the position in the orientation being left before changing dimensions.
+                  rememberAnchorPosition(oldOrientation, lp, oldW, oldH)
+
+                  val ratios = when {
+                      newOrientation == Configuration.ORIENTATION_PORTRAIT && oldOrientation != Configuration.ORIENTATION_PORTRAIT -> {
+                          Pair(portraitAnchorXRatio ?: 0.5f, portraitAnchorYRatio ?: 0.025f)
+                      }
+                      newOrientation == Configuration.ORIENTATION_LANDSCAPE && oldOrientation != Configuration.ORIENTATION_LANDSCAPE -> {
+                          Pair(landscapeAnchorXRatio ?: 0.5f, landscapeAnchorYRatio ?: 0.94f)
+                      }
+                      else -> {
+                          val oldCenterX = (lp.x + lp.width / 2f).coerceIn(0f, oldW.toFloat())
+                          val oldCenterY = (lp.y + lp.height / 2f).coerceIn(0f, oldH.toFloat())
+                          val xr = if (oldW > 0) oldCenterX / oldW else 0.5f
+                          val yr = if (oldH > 0) oldCenterY / oldH else 0.5f
+                          when (rotationDelta) {
+                              1 -> Pair(1f - yr, xr)
+                              2 -> Pair(1f - xr, 1f - yr)
+                              3 -> Pair(yr, 1f - xr)
+                              else -> Pair(xr, yr)
+                          }
+                      }
+                  }
+                  val mappedX = ratios.first.coerceIn(0f, 1f) * newW
+                  val mappedY = ratios.second.coerceIn(0f, 1f) * newH
+                  lastDisplayRotation = newRotation
+                  lastConfigOrientation = newOrientation
+
+                  val circleSize = (58 * d).toInt()
+                  val edgeDistances = listOf(
+                      "left" to mappedX,
+                      "right" to (newW - mappedX),
+                      "top" to mappedY,
+                      "bottom" to (newH - mappedY)
+                  )
+                  val nearest = edgeDistances.minByOrNull { it.second }?.first ?: "left"
+                  val mainView = main as? MainBubbleView
+                  val cutoutWidth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                      try { windowManager.defaultDisplay.cutout?.boundingRects?.filter { it.width() > 0 && it.height() > 0 }?.maxByOrNull { it.width() * it.height() }?.width() ?: 0 } catch (_: Exception) { 0 }
+                  } else 0
+                  val isLandscape = newOrientation == Configuration.ORIENTATION_LANDSCAPE
+                  val canDockAtCamera = nearest == "top" && !isLandscape && cutoutWidth > 0
+                  val topCapsule = nearest == "top" && (isLandscape || canDockAtCamera)
+
+                  if (topCapsule && mainView != null) {
+                      mainView.dockedAtCamera = true
+                      val capsuleWidth = if (canDockAtCamera) {
+                          val opening = (cutoutWidth + (24 * d).toInt()).coerceIn((42 * d).toInt(), (78 * d).toInt())
+                          opening + (30 * d).toInt()
+                      } else (84 * d).toInt()
+                      lp.width = capsuleWidth
+                      lp.height = (52 * d).toInt()
+                      lp.x = (mappedX.toInt() - lp.width / 2).coerceIn(0, (newW - lp.width).coerceAtLeast(0))
+                      lp.y = 0
+                  } else {
+                      mainView?.dockedAtCamera = false
+                      lp.width = circleSize
+                      lp.height = circleSize
+                      when (nearest) {
+                          "left" -> { lp.x = -(circleSize / 2); lp.y = (mappedY - circleSize / 2).toInt().coerceIn(0, (newH - circleSize).coerceAtLeast(0)) }
+                          "right" -> { lp.x = newW - circleSize / 2; lp.y = (mappedY - circleSize / 2).toInt().coerceIn(0, (newH - circleSize).coerceAtLeast(0)) }
+                          "top" -> { lp.x = (mappedX - circleSize / 2).toInt().coerceIn(0, (newW - circleSize).coerceAtLeast(0)); lp.y = -(circleSize / 2) }
+                          else -> { lp.x = (mappedX - circleSize / 2).toInt().coerceIn(0, (newW - circleSize).coerceAtLeast(0)); lp.y = newH - circleSize / 2 }
+                      }
+                  }
+                  lastBubbleScreenWidth = newW
+                  lastBubbleScreenHeight = newH
+                  rememberAnchorPosition(newOrientation, lp, newW, newH)
+                  try { windowManager.updateViewLayout(main, lp) } catch (_: Exception) { }
+                  main.invalidate()
+                  syncReminderOverlay(lp)
+                  syncAdhanMuteBubble()
+                  if (wasMenuVisible) showQuickMenu(lp)
+                  if (openCommand != null) {
+                      val panel = assistantPanel
+                      val panelLp = panel?.layoutParams as? WindowManager.LayoutParams
+                      if (panel != null && panelLp != null) {
+                          panelLp.width = (newW - 82 * d).toInt().coerceAtLeast((245 * d).toInt())
+                          panelLp.height = (newH * 0.72f).toInt().coerceAtMost((newH - 28 * d).toInt()).coerceAtLeast((300 * d).toInt())
+                          panelLp.x = (lp.x + lp.width / 2 - panelLp.width / 2).coerceIn(0, (newW - panelLp.width).coerceAtLeast(0))
+                          panelLp.y = (lp.y + lp.height / 2 + (18 * d).toInt()).coerceIn(0, (newH - panelLp.height).coerceAtLeast(0))
+                          try { windowManager.updateViewLayout(panel, panelLp) } catch (_: Exception) { }
+                      }
+                  }
+              }
+          '''
+          s = s[:start] + new_method + s[end:]
+          p.write_text(s, encoding='utf-8')
+          print('Applied orientation-aware ALISLAH bubble layout.')
+          PYBUBBLE
+
       - name: Verify and install permanent signing key
         shell: bash
         run: |
@@ -262,25 +568,12 @@ jobs:
           set -euo pipefail
           node tests/prayer-calc.test.js
 
-      - name: Clear damaged Gradle generated JAR cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The previous run failed while creating bcprov-jdk18on-1.79.jar
-          # inside Gradle's generated jars cache. Remove generated JAR and
-          # transform caches so Gradle recreates them cleanly on this runner.
-          gradle --stop || true
-          rm -rf "$HOME"/.gradle/caches/jars-* \
-                 "$HOME"/.gradle/caches/transforms-* \
-                 "$HOME"/.gradle/caches/modules-2/files-2.1/org.bouncycastle/bcprov-jdk18on/1.79
-          echo "Damaged generated JAR/transform caches cleared. Dependencies will be downloaded again."
-
       - name: Build APK from a clean state
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon --no-build-cache clean assembleDebug --rerun-tasks
+          gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
           gradle --no-daemon signingReport
 
       - name: Verify APK signature before publishing
