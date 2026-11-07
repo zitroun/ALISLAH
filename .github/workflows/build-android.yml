@@ -262,6 +262,19 @@ jobs:
           set -euo pipefail
           node tests/prayer-calc.test.js
 
+      - name: Clear damaged Gradle generated JAR cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The previous run failed while creating bcprov-jdk18on-1.79.jar
+          # inside Gradle's generated jars cache. Remove generated JAR and
+          # transform caches so Gradle recreates them cleanly on this runner.
+          gradle --stop || true
+          rm -rf "$HOME"/.gradle/caches/jars-* \
+                 "$HOME"/.gradle/caches/transforms-* \
+                 "$HOME"/.gradle/caches/modules-2/files-2.1/org.bouncycastle/bcprov-jdk18on/1.79
+          echo "Damaged generated JAR/transform caches cleared. Dependencies will be downloaded again."
+
       - name: Build APK from a clean state
         working-directory: ALISLAH-Android-v2
         shell: bash
