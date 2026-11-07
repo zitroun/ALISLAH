@@ -1,627 +1,274 @@
 name: Build ALISLAH Android APK
-
-on:
-  workflow_dispatch:
-
+true:
+  workflow_dispatch: null
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-24.04
     env:
       ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+    - name: Checkout repository
+      uses: actions/checkout@v7
+    - name: Set up Java 17
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Locate the preinstalled Android SDK
+      shell: bash
+      run: "set -euo pipefail\nSDK_ROOT=\"${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}\"\
+        \nif [ ! -d \"$SDK_ROOT\" ]; then\n  echo \"::error::Android SDK directory\
+        \ was not found: $SDK_ROOT\"\n  exit 1\nfi\nSDKMANAGER=\"$(find \"$SDK_ROOT/cmdline-tools\"\
+        \ -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)\"\nif\
+        \ [ -z \"$SDKMANAGER\" ]; then\n  echo \"::error::sdkmanager is missing from\
+        \ the runner's preinstalled Android SDK.\"\n  exit 1\nfi\necho \"ANDROID_HOME=$SDK_ROOT\"\
+        \ >> \"$GITHUB_ENV\"\necho \"ANDROID_SDK_ROOT=$SDK_ROOT\" >> \"$GITHUB_ENV\"\
+        \necho \"$SDK_ROOT/platform-tools\" >> \"$GITHUB_PATH\"\necho \"$(dirname\
+        \ \"$SDKMANAGER\")\" >> \"$GITHUB_PATH\"\necho \"Using existing Android SDK\
+        \ at $SDK_ROOT\"\n"
+    - name: Install Android SDK 34 components
+      shell: bash
+      run: "set -euo pipefail\nSDKMANAGER=\"$(find \"$ANDROID_HOME/cmdline-tools\"\
+        \ -type f -name sdkmanager -print | sort -V | tail -n 1)\"\ntest -n \"$SDKMANAGER\"\
+        \n# Accept licenses without allowing yes(1)'s expected SIGPIPE to fail the\
+        \ job.\nset +o pipefail\nyes | \"$SDKMANAGER\" --licenses >/dev/null\nLICENSE_STATUS=${PIPESTATUS[1]}\n\
+        set -o pipefail\nif [ \"$LICENSE_STATUS\" -ne 0 ]; then\n  echo \"::error::Android\
+        \ SDK license acceptance failed.\"\n  exit \"$LICENSE_STATUS\"\nfi\n\"$SDKMANAGER\"\
+        \ --install \"platform-tools\" \"platforms;android-34\" \"build-tools;34.0.0\"\
+        \n"
+    - name: Configure isolated Gradle cache
+      shell: bash
+      run: 'set -euo pipefail
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
+        echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
 
-      - name: Locate the preinstalled Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          if [ ! -d "$SDK_ROOT" ]; then
-            echo "::error::Android SDK directory was not found: $SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager is missing from the runner's preinstalled Android SDK."
-            exit 1
-          fi
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-          echo "Using existing Android SDK at $SDK_ROOT"
+        '
+    - name: Prepare isolated Gradle cache
+      shell: bash
+      run: 'set -euo pipefail
 
-      - name: Install Android SDK 34 components
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
-          test -n "$SDKMANAGER"
-          # Accept licenses without allowing yes(1)'s expected SIGPIPE to fail the job.
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          LICENSE_STATUS=${PIPESTATUS[1]}
-          set -o pipefail
-          if [ "$LICENSE_STATUS" -ne 0 ]; then
-            echo "::error::Android SDK license acceptance failed."
-            exit "$LICENSE_STATUS"
-          fi
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+        rm -rf "$GRADLE_USER_HOME"
 
-      - name: Configure isolated Gradle cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
+        mkdir -p "$GRADLE_USER_HOME"
 
-      - name: Prepare isolated Gradle cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf "$GRADLE_USER_HOME"
-          mkdir -p "$GRADLE_USER_HOME"
-          echo "Using a fresh Gradle cache at $GRADLE_USER_HOME"
+        echo "Using a fresh Gradle cache at $GRADLE_USER_HOME"
 
-      - name: Set up Gradle 8.13 (required by Android Gradle Plugin 8.11.1)
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.13'
-          cache-disabled: true
+        '
+    - name: Set up Gradle 8.13 (required by Android Gradle Plugin 8.11.1)
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        gradle-version: '8.13'
+        cache-disabled: true
+    - name: Unpack exactly one Android source archive
+      shell: bash
+      run: "set -euo pipefail\nmapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f\
+        \ -name 'ALISLAH-Android-v2-source.zip' -print)\nif [ \"${#ZIP_FILES[@]}\"\
+        \ -ne 1 ]; then\n  echo \"::error::Expected exactly one ALISLAH-Android-v2-source.zip,\
+        \ found ${#ZIP_FILES[@]}\"\n  exit 1\nfi\n# Remove any checked-out/stale source\
+        \ tree before extracting the selected archive.\n# This prevents Gradle from\
+        \ compiling leftover files or reusing an old APK.\nrm -rf ALISLAH-Android-v2\n\
+        unzip -o \"${ZIP_FILES[0]}\"\ntest -s ALISLAH-Android-v2/debug.keystore\n\
+        test -s ALISLAH-Android-v2/app/build.gradle\necho \"Source archive extracted\
+        \ into a clean directory.\"\n"
+    - name: Remove optional Mixer-TTS source assets
+      shell: bash
+      run: 'set -euo pipefail
 
-      - name: Unpack exactly one Android source archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source.zip' -print)
-          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
-            exit 1
-          fi
-          # Remove any checked-out/stale source tree before extracting the selected archive.
-          # This prevents Gradle from compiling leftover files or reusing an old APK.
-          rm -rf ALISLAH-Android-v2
-          unzip -o "${ZIP_FILES[0]}"
-          test -s ALISLAH-Android-v2/debug.keystore
-          test -s ALISLAH-Android-v2/app/build.gradle
-          echo "Source archive extracted into a clean directory."
+        # ALISLAH is built without the optional Mixer-TTS engine or its model files.
 
-      - name: Remove optional Mixer-TTS source assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          # ALISLAH is built without the optional Mixer-TTS engine or its model files.
-          rm -rf ALISLAH-Android-v2/flutter_tts_module
-          rm -rf ALISLAH-Android-v2/flutter_tts_generated
-          echo "Mixer-TTS has been excluded from this APK build."
+        rm -rf ALISLAH-Android-v2/flutter_tts_module
 
-      - name: Remove Mixer-TTS and Flutter integration cleanly
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYFIX'
-          from pathlib import Path
-          import re
-          root = Path('ALISLAH-Android-v2')
+        rm -rf ALISLAH-Android-v2/flutter_tts_generated
 
-          # Remove the obsolete Flutter module include from Gradle settings.
-          settings = root / 'settings.gradle'
-          lines = settings.read_text(encoding='utf-8').splitlines()
-          kept = [line for line in lines if not re.search(
-              r'flutter_tts_generated|include_flutter\.groovy|include\s*\(?\s*[\'\"]:flutter[\'\"]', line
-          )]
-          settings.write_text('\n'.join(line for line in kept if 'CI workflow generates this Flutter module' not in line and 'setBinding(new Binding' not in line) + '\n', encoding='utf-8')
+        echo "Mixer-TTS has been excluded from this APK build."
 
-          # The app's only Gradle dependency on Flutter is the Mixer-TTS engine.
-          app_gradle = root / 'app/build.gradle'
-          text = app_gradle.read_text(encoding='utf-8')
-          text = re.sub(r"(?m)^\s*implementation\s+project\s*\(\s*['\"]:flutter['\"]\s*\)\s*;?\s*$\n?", '', text)
-          app_gradle.write_text(text, encoding='utf-8')
+        '
+    - name: Remove Mixer-TTS and Flutter integration cleanly
+      shell: bash
+      run: "set -euo pipefail\npython3 - <<'PYFIX'\nfrom pathlib import Path\nimport\
+        \ re\nroot = Path('ALISLAH-Android-v2')\n\n# Remove the obsolete Flutter module\
+        \ include from Gradle settings.\nsettings = root / 'settings.gradle'\nlines\
+        \ = settings.read_text(encoding='utf-8').splitlines()\nkept = [line for line\
+        \ in lines if not re.search(\n    r'flutter_tts_generated|include_flutter\\\
+        .groovy|include\\s*\\(?\\s*[\\'\\\"]:flutter[\\'\\\"]', line\n)]\nsettings.write_text('\\\
+        n'.join(line for line in kept if 'CI workflow generates this Flutter module'\
+        \ not in line and 'setBinding(new Binding' not in line) + '\\n', encoding='utf-8')\n\
+        \n# The app's only Gradle dependency on Flutter is the Mixer-TTS engine.\n\
+        app_gradle = root / 'app/build.gradle'\ntext = app_gradle.read_text(encoding='utf-8')\n\
+        text = re.sub(r\"(?m)^\\s*implementation\\s+project\\s*\\(\\s*['\\\"]:flutter['\\\
+        \"]\\s*\\)\\s*;?\\s*$\\n?\", '', text)\napp_gradle.write_text(text, encoding='utf-8')\n\
+        \n# Remove Flutter engine imports, state, and lifecycle methods from MainActivity.\n\
+        main = root / 'app/src/main/java/dz/alislah/app/MainActivity.kt'\ns = main.read_text(encoding='utf-8')\n\
+        s = re.sub(r'(?m)^import io\\.flutter\\.[^\\n]*\\n', '', s)\ns = re.sub(r'(?m)^\\\
+        s*private var mixerFlutterEngine:.*\\n', '', s)\ns = re.sub(r'(?m)^\\s*private\
+        \ var mixerTtsChannel:.*\\n', '', s)\ns = re.sub(r'(?m)^\\s*private var mixerTtsReady\\\
+        s*=.*\\n', '', s)\ns = re.sub(r'(?m)^\\s*private var pendingMixerTtsText:.*\\\
+        n', '', s)\nstart = s.find('    private fun dispatchMixerVoiceStatus(')\n\
+        end = s.find('    override fun onCreate(', start)\nif start != -1 and end\
+        \ != -1:\n    s = s[:start] + s[end:]\ns = re.sub(r'(?m)^\\s*try \\{ stopMixerTts\\\
+        (\\); mixerFlutterEngine\\?\\.destroy\\(\\) \\} catch \\(_:\\s*Exception\\\
+        ) \\{ \\}\\n', '', s)\ns = re.sub(r'(?m)^\\s*mixerFlutterEngine = null\\n',\
+        \ '', s)\ns = re.sub(r'(?m)^\\s*mixerTtsChannel = null\\n', '', s)\ns = re.sub(r'(?m)^\\\
+        s*mixerTtsReady = false\\n', '', s)\n# Replace the bridge methods that previously\
+        \ invoked Mixer-TTS with the existing native TTS service.\nstart = s.find('\
+        \        @JavascriptInterface fun speakDisplayedAyah(text: String)')\nend\
+        \ = s.find('        @JavascriptInterface fun playAdhanTest()', start)\nif\
+        \ start == -1 or end == -1:\n    raise SystemExit('Could not locate assistant\
+        \ voice bridge block in MainActivity.kt')\nbridge = '''        private fun\
+        \ speakWithExistingAssistant(text: String) {\n            val clean = text.trim().take(700)\n\
+        \            if (clean.isBlank()) return\n            val i = Intent(this@MainActivity,\
+        \ FloatingBubbleService::class.java).apply {\n                action = FloatingBubbleService.ACTION_SPEAK_TEXT\n\
+        \                putExtra(FloatingBubbleService.EXTRA_SPEAK_TEXT, clean)\n\
+        \            }\n            try {\n                if (Build.VERSION.SDK_INT\
+        \ >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)\n\
+        \            } catch (_: Exception) { }\n        }\n        @JavascriptInterface\
+        \ fun speakDisplayedAyah(text: String) { runOnUiThread { speakWithExistingAssistant(text)\
+        \ } }\n        @JavascriptInterface fun speakAssistantText(text: String) {\
+        \ runOnUiThread { speakWithExistingAssistant(text) } }\n        @JavascriptInterface\
+        \ fun stopAssistantSpeech() { runOnUiThread {\n            try {\n       \
+        \         val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply\
+        \ { action = FloatingBubbleService.ACTION_STOP_SPEECH }\n                if\
+        \ (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)\
+        \ else startService(i)\n            } catch (_: Exception) { }\n        }\
+        \ }\n        @JavascriptInterface fun setAssistantVoiceMode(mode: String)\
+        \ { prefs.edit().putString(\"voiceMode\", if (mode == \"text\" || mode ==\
+        \ \"voice\" || mode == \"both\") mode else \"both\").apply() }\n        @JavascriptInterface\
+        \ fun testAssistantVoice() { runOnUiThread {\n            try {\n        \
+        \        val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply\
+        \ { action = FloatingBubbleService.ACTION_SPEAK_TEST }\n                if\
+        \ (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)\
+        \ else startService(i)\n            } catch (_: Exception) { }\n        }\
+        \ }\n'''\ns = s[:start] + bridge + s[end:]\n# Keep the legacy voice as the\
+        \ only selectable engine in this build.\ns = re.sub(r'@JavascriptInterface\
+        \ fun setAssistantVoiceEngine\\(engine: String\\) \\{[^}]*\\}',\n        \
+        \   '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs.edit().putString(\"\
+        assistantVoiceEngine\", \"old\").apply() }', s)\nmain.write_text(s, encoding='utf-8')\n\
+        \n\n# Force the floating assistant to use its existing Android TTS engine\
+        \ (with local fallback).\nservice = root / 'app/src/main/java/dz/alislah/app/FloatingBubbleService.kt'\n\
+        svc = service.read_text(encoding='utf-8')\nstart = svc.find('        // The\
+        \ selected engine controls assistant speech and displayed Quran verses alike.')\n\
+        end = svc.find('    }\\n\\n    private fun speakWithAndroidTts', start)\n\
+        if start != -1 and end != -1:\n    svc = svc[:start] + '        speakWithAndroidTts(speechText,\
+        \ quranLike)\\n' + svc[end:]\nsvc = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\\\
+        (engine: String\\) \\{[^}]*\\}',\n             '@JavascriptInterface fun setAssistantVoiceEngine(engine:\
+        \ String) { prefs().edit().putString(\"assistantVoiceEngine\", \"old\").apply()\
+        \ }', svc)\nsvc = svc.replace('assistantWebView?.evaluateJavascript(\"window.AlishlahNeuralVoice&&window.AlishlahNeuralVoice.stop()\"\
+        , null); stopReminderSpeech()', 'stopReminderSpeech()')\nstart = svc.find('\
+        \        @JavascriptInterface fun onNeuralSpeechResult(success: Boolean, detail:\
+        \ String)')\nend = svc.find('        @JavascriptInterface fun setAssistantVoiceMode(',\
+        \ start)\nif start != -1 and end != -1:\n    svc = svc[:start] + svc[end:]\n\
+        service.write_text(svc, encoding='utf-8')\n\n# Remove the obsolete neural\
+        \ engine script from the app page.\nindex = root / 'app/src/main/assets/index.html'\n\
+        html = index.read_text(encoding='utf-8')\nhtml = html.replace('<script src=\"\
+        js/neural-voice.js\"></script>', '')\nindex.write_text(html, encoding='utf-8')\n\
+        \n# Make the voice settings UI expose only the existing native assistant.\n\
+        js = root / 'app/src/main/assets/js/main.js'\njs_text = js.read_text(encoding='utf-8')\n\
+        js_text = js_text.replace('<option value=\"old\">المساعد القديم (محلي)</option><option\
+        \ value=\"neural\">المساعد العربي العصبي الجديد (محلي)</option>',\n      \
+        \                    '<option value=\"old\">المساعد الحالي (محلي)</option>')\n\
+        js_text = js_text.replace(\"engineSelect.value=data.settings.assistantVoiceEngine||'neural';\"\
+        , \"engineSelect.value='old';data.settings.assistantVoiceEngine='old';\")\n\
+        js_text = js_text.replace(\"engineSelect.value==='neural'?'المحرك المختار:\
+        \ العصبي الجديد — يعمل محليًا دون إنترنت':'المحرك المختار: القديم — يعمل محليًا'\"\
+        , \"'المساعد الحالي يعمل محليًا'\")\njs.write_text(js_text, encoding='utf-8')\n\
+        \n# Delete the now-unused Mixer-TTS assets/modules.\nfor rel in ('flutter_tts_module',\
+        \ 'flutter_tts_generated'):\n    p = root / rel\n    if p.exists():\n    \
+        \    import shutil\n        shutil.rmtree(p)\nvoice_js = root / 'app/src/main/assets/js/neural-voice.js'\n\
+        if voice_js.exists():\n    voice_js.unlink()\n\n# Fail early if Gradle or\
+        \ native source still references the removed Flutter engine.\nchecks = [settings,\
+        \ app_gradle, main, service, index, js]\npatterns = re.compile(r'flutter_tts_generated|include_flutter\\\
+        .groovy|project\\s*\\(\\s*[\\'\\\"]:flutter[\\'\\\"]\\s*\\)|io\\.flutter\\\
+        .|mixerFlutterEngine|mixerTtsChannel|mixerTtsReady|speakMixerTts|stopMixerTts|onNeuralSpeechResult|Mixer-TTS',\
+        \ re.I)\nleftovers = []\nfor f in checks:\n    for n, line in enumerate(f.read_text(encoding='utf-8').splitlines(),\
+        \ 1):\n        if patterns.search(line):\n            leftovers.append(f'{f}:{n}:{line.strip()}')\n\
+        if leftovers:\n    raise SystemExit('Mixer/Flutter references remain:\\n'\
+        \ + '\\n'.join(leftovers))\nprint('Mixer-TTS removed: Gradle settings/dependency,\
+        \ native Flutter engine bridge, and neural voice UI.')\nPYFIX\n"
+    - name: Verify and install permanent signing key
+      shell: bash
+      run: "set -euo pipefail\nKEYSTORE=\"ALISLAH-Android-v2/debug.keystore\"\ntest\
+        \ -s \"$KEYSTORE\"\nmkdir -p \"$HOME/.android\"\ncp \"$KEYSTORE\" \"$HOME/.android/debug.keystore\"\
+        \nchmod 600 \"$HOME/.android/debug.keystore\"\nACTUAL_KEY_SHA256=\"$(keytool\
+        \ -list -v \\\n  -keystore \"$HOME/.android/debug.keystore\" \\\n  -storepass\
+        \ android \\\n  -alias androiddebugkey 2>/dev/null \\\n  | awk -F': ' '/SHA256:/{gsub(\"\
+        :\", \"\", $2); print toupper($2); exit}')\"\nif [ \"$ACTUAL_KEY_SHA256\"\
+        \ != \"$ALISLAH_SIGNING_CERT_SHA256\" ]; then\n  echo \"::warning title=Signing\
+        \ certificate differs::This APK will still be built and published, but Android\
+        \ may reject it as an update over the currently installed ALISLAH version.\
+        \ You may need to uninstall the old app first; uninstalling can erase local\
+        \ app data unless backed up.\"\n  echo \"Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256\"\
+        \n  echo \"Actual keystore SHA-256:       $ACTUAL_KEY_SHA256\"\n  echo \"\
+        SIGNING_KEY_MATCH=false\" >> \"$GITHUB_ENV\"\nelse\n  echo \"Permanent ALISLAH\
+        \ signing key matches the expected certificate.\"\n  echo \"SIGNING_KEY_MATCH=true\"\
+        \ >> \"$GITHUB_ENV\"\nfi\n"
+    - name: Confirm app signing configuration
+      working-directory: ALISLAH-Android-v2
+      shell: bash
+      run: 'set -euo pipefail
 
-          # Remove Flutter engine imports, state, and lifecycle methods from MainActivity.
-          main = root / 'app/src/main/java/dz/alislah/app/MainActivity.kt'
-          s = main.read_text(encoding='utf-8')
-          s = re.sub(r'(?m)^import io\.flutter\.[^\n]*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerFlutterEngine:.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerTtsChannel:.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerTtsReady\s*=.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var pendingMixerTtsText:.*\n', '', s)
-          start = s.find('    private fun dispatchMixerVoiceStatus(')
-          end = s.find('    override fun onCreate(', start)
-          if start != -1 and end != -1:
-              s = s[:start] + s[end:]
-          s = re.sub(r'(?m)^\s*try \{ stopMixerTts\(\); mixerFlutterEngine\?\.destroy\(\) \} catch \(_:\s*Exception\) \{ \}\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerFlutterEngine = null\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerTtsChannel = null\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerTtsReady = false\n', '', s)
-          # Replace the bridge methods that previously invoked Mixer-TTS with the existing native TTS service.
-          start = s.find('        @JavascriptInterface fun speakDisplayedAyah(text: String)')
-          end = s.find('        @JavascriptInterface fun playAdhanTest()', start)
-          if start == -1 or end == -1:
-              raise SystemExit('Could not locate assistant voice bridge block in MainActivity.kt')
-          bridge = '''        private fun speakWithExistingAssistant(text: String) {
-                      val clean = text.trim().take(700)
-                      if (clean.isBlank()) return
-                      val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply {
-                          action = FloatingBubbleService.ACTION_SPEAK_TEXT
-                          putExtra(FloatingBubbleService.EXTRA_SPEAK_TEXT, clean)
-                      }
-                      try {
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  }
-                  @JavascriptInterface fun speakDisplayedAyah(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
-                  @JavascriptInterface fun speakAssistantText(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
-                  @JavascriptInterface fun stopAssistantSpeech() { runOnUiThread {
-                      try {
-                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_STOP_SPEECH }
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  } }
-                  @JavascriptInterface fun setAssistantVoiceMode(mode: String) { prefs.edit().putString("voiceMode", if (mode == "text" || mode == "voice" || mode == "both") mode else "both").apply() }
-                  @JavascriptInterface fun testAssistantVoice() { runOnUiThread {
-                      try {
-                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_SPEAK_TEST }
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  } }
-          '''
-          s = s[:start] + bridge + s[end:]
-          # Keep the legacy voice as the only selectable engine in this build.
-          s = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
-                     '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs.edit().putString("assistantVoiceEngine", "old").apply() }', s)
-          main.write_text(s, encoding='utf-8')
+        grep -Fq "storeFile rootProject.file(''debug.keystore'')" app/build.gradle
 
+        grep -Fq "signingConfig signingConfigs.alislah" app/build.gradle
 
-          # Force the floating assistant to use its existing Android TTS engine (with local fallback).
-          service = root / 'app/src/main/java/dz/alislah/app/FloatingBubbleService.kt'
-          svc = service.read_text(encoding='utf-8')
-          start = svc.find('        // The selected engine controls assistant speech and displayed Quran verses alike.')
-          end = svc.find('    }\n\n    private fun speakWithAndroidTts', start)
-          if start != -1 and end != -1:
-              svc = svc[:start] + '        speakWithAndroidTts(speechText, quranLike)\n' + svc[end:]
-          svc = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
-                       '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs().edit().putString("assistantVoiceEngine", "old").apply() }', svc)
-          svc = svc.replace('assistantWebView?.evaluateJavascript("window.AlishlahNeuralVoice&&window.AlishlahNeuralVoice.stop()", null); stopReminderSpeech()', 'stopReminderSpeech()')
-          start = svc.find('        @JavascriptInterface fun onNeuralSpeechResult(success: Boolean, detail: String)')
-          end = svc.find('        @JavascriptInterface fun setAssistantVoiceMode(', start)
-          if start != -1 and end != -1:
-              svc = svc[:start] + svc[end:]
-          service.write_text(svc, encoding='utf-8')
+        echo "The debug variant is configured to use the preserved ALISLAH keystore."
 
-          # Remove the obsolete neural engine script from the app page.
-          index = root / 'app/src/main/assets/index.html'
-          html = index.read_text(encoding='utf-8')
-          html = html.replace('<script src="js/neural-voice.js"></script>', '')
-          index.write_text(html, encoding='utf-8')
+        '
+    - name: Run ALISLAH source checks
+      working-directory: ALISLAH-Android-v2
+      shell: bash
+      run: 'set -euo pipefail
 
-          # Make the voice settings UI expose only the existing native assistant.
-          js = root / 'app/src/main/assets/js/main.js'
-          js_text = js.read_text(encoding='utf-8')
-          js_text = js_text.replace('<option value="old">المساعد القديم (محلي)</option><option value="neural">المساعد العربي العصبي الجديد (محلي)</option>',
-                                    '<option value="old">المساعد الحالي (محلي)</option>')
-          js_text = js_text.replace("engineSelect.value=data.settings.assistantVoiceEngine||'neural';", "engineSelect.value='old';data.settings.assistantVoiceEngine='old';")
-          js_text = js_text.replace("engineSelect.value==='neural'?'المحرك المختار: العصبي الجديد — يعمل محليًا دون إنترنت':'المحرك المختار: القديم — يعمل محليًا'", "'المساعد الحالي يعمل محليًا'")
-          js.write_text(js_text, encoding='utf-8')
+        node tests/prayer-calc.test.js
 
-          # Delete the now-unused Mixer-TTS assets/modules.
-          for rel in ('flutter_tts_module', 'flutter_tts_generated'):
-              p = root / rel
-              if p.exists():
-                  import shutil
-                  shutil.rmtree(p)
-          voice_js = root / 'app/src/main/assets/js/neural-voice.js'
-          if voice_js.exists():
-              voice_js.unlink()
+        '
+    - name: Build APK from a clean state
+      working-directory: ALISLAH-Android-v2
+      shell: bash
+      run: 'set -euo pipefail
 
-          # Fail early if Gradle or native source still references the removed Flutter engine.
-          checks = [settings, app_gradle, main, service, index, js]
-          patterns = re.compile(r'flutter_tts_generated|include_flutter\.groovy|project\s*\(\s*[\'\"]:flutter[\'\"]\s*\)|io\.flutter\.|mixerFlutterEngine|mixerTtsChannel|mixerTtsReady|speakMixerTts|stopMixerTts|onNeuralSpeechResult|Mixer-TTS', re.I)
-          leftovers = []
-          for f in checks:
-              for n, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
-                  if patterns.search(line):
-                      leftovers.append(f'{f}:{n}:{line.strip()}')
-          if leftovers:
-              raise SystemExit('Mixer/Flutter references remain:\n' + '\n'.join(leftovers))
-          print('Mixer-TTS removed: Gradle settings/dependency, native Flutter engine bridge, and neural voice UI.')
-          PYFIX
+        gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
 
-      - name: Correct floating bubble layout in portrait and landscape
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYBUBBLE'
-          from pathlib import Path
-          p = Path('ALISLAH-Android-v2/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt')
-          s = p.read_text(encoding='utf-8')
+        gradle --no-daemon signingReport
 
-          def replace_once(old, new, label):
-              global s
-              count = s.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
-              s = s.replace(old, new, 1)
-
-          replace_once('''    private var lastDisplayRotation = Surface.ROTATION_0
-              private var orbitRotation = 0.0
-          ''', '''    private var lastDisplayRotation = Surface.ROTATION_0
-              private var lastConfigOrientation = Configuration.ORIENTATION_UNDEFINED
-              // Keep independent anchors for portrait and landscape so a round trip restores
-              // the exact place instead of rotating stale pixel coordinates into the new layout.
-              private var portraitAnchorXRatio: Float? = null
-              private var portraitAnchorYRatio: Float? = null
-              private var landscapeAnchorXRatio: Float? = null
-              private var landscapeAnchorYRatio: Float? = null
-              private var orbitRotation = 0.0
-          ''', 'orientation state')
-
-          # Make the orbit fit the short axis of a landscape display.
-          replace_once('''        val item = (52 * d).toInt()
-                  val radius = (94 * d).toInt()
-                  val size = (radius * 2 + item + 12*d).toInt()
-          ''', '''        val item = (52 * d).toInt()
-                  val (displayW, displayH) = realScreenSize()
-                  val safeRadius = (minOf(displayW, displayH) / 2 - item / 2 - (8*d).toInt()).coerceAtLeast((42*d).toInt())
-                  val radius = minOf((94*d).toInt(), safeRadius)
-                  val size = (radius * 2 + item + 12*d).toInt()
-          ''', 'responsive side orbit')
-
-          # Extend initial placement to use bottom half-circle in landscape and camera capsule in portrait.
-          replace_once('''        val circleSize = (58 * d).toInt()
-                  val cameraX = cameraCenterX(screenW)
-          ''', '''        val circleSize = (58 * d).toInt()
-                  val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-                  lastConfigOrientation = resources.configuration.orientation
-                  val cameraX = cameraCenterX(screenW)
-          ''', 'initial orientation')
-          replace_once('''        val view = MainBubbleView(this).apply {
-                      dockedAtCamera = true
-                      contentDescription = "فقاعة ALISLAH الخضراء؛ ضغطة للفقاعات الجانبية وضغطتان لفتح التطبيق"
-                      elevation = 18 * d
-                  }
-          ''', '''        val view = MainBubbleView(this).apply {
-                      dockedAtCamera = !isLandscape
-                      contentDescription = "فقاعة ALISLAH الخضراء؛ ضغطة للفقاعات الجانبية وضغطتان لفتح التطبيق"
-                      elevation = 18 * d
-                  }
-          ''', 'initial bubble shape')
-          replace_once('''        val lp = WindowManager.LayoutParams(dockWidth, dockHeight, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
-                      gravity = Gravity.TOP or Gravity.LEFT
-                      x = (cameraX - dockWidth / 2).coerceIn(0, (screenW - dockWidth).coerceAtLeast(0))
-                      y = 0
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                      }
-                  }
-          ''', '''        val initialWidth = if (isLandscape) circleSize else dockWidth
-                  val initialHeight = if (isLandscape) circleSize else dockHeight
-                  val lp = WindowManager.LayoutParams(initialWidth, initialHeight, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
-                      gravity = Gravity.TOP or Gravity.LEFT
-                      if (isLandscape) {
-                          x = (screenW - circleSize) / 2
-                          y = screenH - circleSize / 2 // bottom half-circle, clipped by the physical screen edge
-                      } else {
-                          x = (cameraX - dockWidth / 2).coerceIn(0, (screenW - dockWidth).coerceAtLeast(0))
-                          y = 0
-                      }
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                      }
-                  }
-                  rememberAnchorPosition(lastConfigOrientation, lp, screenW, screenH)
-          ''', 'initial layout params')
-
-          # Replace drag release snapping with orientation-aware edge snapping.
-          replace_once('''                    if (dragged) {
-                                  val (currentW, currentH) = realScreenSize()
-                                  val density = resources.displayMetrics.density
-                                  val centerX = lp.x + lp.width / 2
-                                  val topZone = (76 * density).toInt()
-                                  val targetCameraX = cameraCenterX(currentW)
-                                  val nearTopCamera = lp.y <= topZone && kotlin.math.abs(centerX - targetCameraX) <= (90 * density).toInt()
-                                  if (nearTopCamera) {
-                                      view.dockedAtCamera = true
-                                      lp.width = dockWidth; lp.height = dockHeight
-                                      lp.x = (targetCameraX - dockWidth / 2).coerceIn(0, (currentW - dockWidth).coerceAtLeast(0))
-                                      lp.y = 0
-                                  } else {
-                                      view.dockedAtCamera = false
-                                      lp.width = circleSize; lp.height = circleSize
-                                      val onLeft = centerX < currentW / 2
-                                      lp.x = if (onLeft) -(circleSize / 2) else currentW - (circleSize / 2)
-                                      lp.y = lp.y.coerceIn(0, (currentH-circleSize).coerceAtLeast(0))
-                                  }
-                                  v.requestLayout()
-                                  try { windowManager.updateViewLayout(v, lp) } catch (_: Exception) {}
-                                  v.post { if (quickMenu != null) syncQuickMenuToAnchor(lp); syncReminderOverlay(lp); syncAdhanMuteBubble() }
-          ''', '''                    if (dragged) {
-                                  val (currentW, currentH) = realScreenSize()
-                                  val density = resources.displayMetrics.density
-                                  val centerX = lp.x + lp.width / 2
-                                  val centerY = lp.y + lp.height / 2
-                                  val topZone = (76 * density).toInt()
-                                  val targetCameraX = cameraCenterX(currentW)
-                                  val nearTopCamera = lp.y <= topZone && kotlin.math.abs(centerX - targetCameraX) <= (90 * density).toInt()
-                                  if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                                      val distances = listOf(
-                                          "top" to centerY,
-                                          "bottom" to (currentH - centerY),
-                                          "left" to centerX,
-                                          "right" to (currentW - centerX)
-                                      )
-                                      when (distances.minByOrNull { it.second }?.first) {
-                                          "top" -> {
-                                              view.dockedAtCamera = true // top half-capsule in landscape
-                                              lp.width = (84 * density).toInt(); lp.height = dockHeight
-                                              lp.x = (centerX - lp.width / 2).coerceIn(0, (currentW - lp.width).coerceAtLeast(0)); lp.y = 0
-                                          }
-                                          "bottom" -> {
-                                              view.dockedAtCamera = false // bottom half-circle in landscape
-                                              lp.width = circleSize; lp.height = circleSize
-                                              lp.x = (centerX - circleSize / 2).toInt().coerceIn(0, (currentW - circleSize).coerceAtLeast(0))
-                                              lp.y = currentH - circleSize / 2
-                                          }
-                                          "left" -> {
-                                              view.dockedAtCamera = false; lp.width = circleSize; lp.height = circleSize
-                                              lp.x = -(circleSize / 2); lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH - circleSize).coerceAtLeast(0))
-                                          }
-                                          else -> {
-                                              view.dockedAtCamera = false; lp.width = circleSize; lp.height = circleSize
-                                              lp.x = currentW - circleSize / 2; lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH - circleSize).coerceAtLeast(0))
-                                          }
-                                      }
-                                  } else if (nearTopCamera) {
-                                      view.dockedAtCamera = true
-                                      lp.width = dockWidth; lp.height = dockHeight
-                                      lp.x = (targetCameraX - dockWidth / 2).coerceIn(0, (currentW - dockWidth).coerceAtLeast(0))
-                                      lp.y = 0
-                                  } else {
-                                      view.dockedAtCamera = false
-                                      lp.width = circleSize; lp.height = circleSize
-                                      val onLeft = centerX < currentW / 2
-                                      lp.x = if (onLeft) -(circleSize / 2) else currentW - (circleSize / 2)
-                                      lp.y = (centerY - circleSize / 2).toInt().coerceIn(0, (currentH-circleSize).coerceAtLeast(0))
-                                  }
-                                  rememberAnchorPosition(resources.configuration.orientation, lp, currentW, currentH)
-                                  v.requestLayout()
-                                  try { windowManager.updateViewLayout(v, lp) } catch (_: Exception) {}
-                                  v.post { if (quickMenu != null) syncQuickMenuToAnchor(lp); syncReminderOverlay(lp); syncAdhanMuteBubble() }
-          ''', 'orientation-aware drag snapping')
-
-          # Add the anchor persistence helper before display configuration callback.
-          replace_once('''    private var pendingDisplayReflow: Runnable? = null
-
-              override fun onConfigurationChanged(newConfig: Configuration) {
-          ''', '''    private fun rememberAnchorPosition(orientation: Int, lp: WindowManager.LayoutParams, screenW: Int, screenH: Int) {
-                  if (screenW <= 0 || screenH <= 0) return
-                  val x = ((lp.x + lp.width / 2f) / screenW).coerceIn(0f, 1f)
-                  val y = ((lp.y + lp.height / 2f) / screenH).coerceIn(0f, 1f)
-                  if (orientation == Configuration.ORIENTATION_PORTRAIT) {
-                      portraitAnchorXRatio = x; portraitAnchorYRatio = y
-                  } else if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                      landscapeAnchorXRatio = x; landscapeAnchorYRatio = y
-                  }
-              }
-
-              private var pendingDisplayReflow: Runnable? = null
-
-              override fun onConfigurationChanged(newConfig: Configuration) {
-          ''', 'anchor helper')
-
-          # Replace the whole reflow method with orientation-stable geometry.
-          start = s.find('    private fun applyDisplayConfiguration(newConfig: Configuration) {')
-          end = s.find('\n    override fun onDestroy() {', start)
-          if start < 0 or end < 0:
-              raise SystemExit('Could not locate applyDisplayConfiguration method')
-          new_method = '''    private fun applyDisplayConfiguration(newConfig: Configuration) {
-                  val main = bubble ?: return
-                  val lp = params ?: return
-                  val wasMenuVisible = quickMenu != null
-                  val openCommand = activeOverlayCommand
-                  hideQuickMenu()
-                  orbitRotation = 0.0
-
-                  val d = resources.displayMetrics.density
-                  val (newW, newH) = realScreenSize()
-                  val oldW = lastBubbleScreenWidth.takeIf { it > 0 } ?: newW
-                  val oldH = lastBubbleScreenHeight.takeIf { it > 0 } ?: newH
-                  val oldOrientation = lastConfigOrientation
-                  val newOrientation = newConfig.orientation
-                  val oldRotation = lastDisplayRotation
-                  val newRotation = try { windowManager.defaultDisplay.rotation } catch (_: Exception) { oldRotation }
-                  val rotationDelta = (newRotation - oldRotation + 4) % 4
-
-                  // Capture the position in the orientation being left before changing dimensions.
-                  rememberAnchorPosition(oldOrientation, lp, oldW, oldH)
-
-                  val ratios = when {
-                      newOrientation == Configuration.ORIENTATION_PORTRAIT && oldOrientation != Configuration.ORIENTATION_PORTRAIT -> {
-                          Pair(portraitAnchorXRatio ?: 0.5f, portraitAnchorYRatio ?: 0.025f)
-                      }
-                      newOrientation == Configuration.ORIENTATION_LANDSCAPE && oldOrientation != Configuration.ORIENTATION_LANDSCAPE -> {
-                          Pair(landscapeAnchorXRatio ?: 0.5f, landscapeAnchorYRatio ?: 0.94f)
-                      }
-                      else -> {
-                          val oldCenterX = (lp.x + lp.width / 2f).coerceIn(0f, oldW.toFloat())
-                          val oldCenterY = (lp.y + lp.height / 2f).coerceIn(0f, oldH.toFloat())
-                          val xr = if (oldW > 0) oldCenterX / oldW else 0.5f
-                          val yr = if (oldH > 0) oldCenterY / oldH else 0.5f
-                          when (rotationDelta) {
-                              1 -> Pair(1f - yr, xr)
-                              2 -> Pair(1f - xr, 1f - yr)
-                              3 -> Pair(yr, 1f - xr)
-                              else -> Pair(xr, yr)
-                          }
-                      }
-                  }
-                  val mappedX = ratios.first.coerceIn(0f, 1f) * newW
-                  val mappedY = ratios.second.coerceIn(0f, 1f) * newH
-                  lastDisplayRotation = newRotation
-                  lastConfigOrientation = newOrientation
-
-                  val circleSize = (58 * d).toInt()
-                  val edgeDistances = listOf(
-                      "left" to mappedX,
-                      "right" to (newW - mappedX),
-                      "top" to mappedY,
-                      "bottom" to (newH - mappedY)
-                  )
-                  val nearest = edgeDistances.minByOrNull { it.second }?.first ?: "left"
-                  val mainView = main as? MainBubbleView
-                  val cutoutWidth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                      try { windowManager.defaultDisplay.cutout?.boundingRects?.filter { it.width() > 0 && it.height() > 0 }?.maxByOrNull { it.width() * it.height() }?.width() ?: 0 } catch (_: Exception) { 0 }
-                  } else 0
-                  val isLandscape = newOrientation == Configuration.ORIENTATION_LANDSCAPE
-                  val canDockAtCamera = nearest == "top" && !isLandscape && cutoutWidth > 0
-                  val topCapsule = nearest == "top" && (isLandscape || canDockAtCamera)
-
-                  if (topCapsule && mainView != null) {
-                      mainView.dockedAtCamera = true
-                      val capsuleWidth = if (canDockAtCamera) {
-                          val opening = (cutoutWidth + (24 * d).toInt()).coerceIn((42 * d).toInt(), (78 * d).toInt())
-                          opening + (30 * d).toInt()
-                      } else (84 * d).toInt()
-                      lp.width = capsuleWidth
-                      lp.height = (52 * d).toInt()
-                      lp.x = (mappedX.toInt() - lp.width / 2).coerceIn(0, (newW - lp.width).coerceAtLeast(0))
-                      lp.y = 0
-                  } else {
-                      mainView?.dockedAtCamera = false
-                      lp.width = circleSize
-                      lp.height = circleSize
-                      when (nearest) {
-                          "left" -> { lp.x = -(circleSize / 2); lp.y = (mappedY - circleSize / 2).toInt().coerceIn(0, (newH - circleSize).coerceAtLeast(0)) }
-                          "right" -> { lp.x = newW - circleSize / 2; lp.y = (mappedY - circleSize / 2).toInt().coerceIn(0, (newH - circleSize).coerceAtLeast(0)) }
-                          "top" -> { lp.x = (mappedX - circleSize / 2).toInt().coerceIn(0, (newW - circleSize).coerceAtLeast(0)); lp.y = -(circleSize / 2) }
-                          else -> { lp.x = (mappedX - circleSize / 2).toInt().coerceIn(0, (newW - circleSize).coerceAtLeast(0)); lp.y = newH - circleSize / 2 }
-                      }
-                  }
-                  lastBubbleScreenWidth = newW
-                  lastBubbleScreenHeight = newH
-                  rememberAnchorPosition(newOrientation, lp, newW, newH)
-                  try { windowManager.updateViewLayout(main, lp) } catch (_: Exception) { }
-                  main.invalidate()
-                  syncReminderOverlay(lp)
-                  syncAdhanMuteBubble()
-                  if (wasMenuVisible) showQuickMenu(lp)
-                  if (openCommand != null) {
-                      val panel = assistantPanel
-                      val panelLp = panel?.layoutParams as? WindowManager.LayoutParams
-                      if (panel != null && panelLp != null) {
-                          panelLp.width = (newW - 82 * d).toInt().coerceAtLeast((245 * d).toInt())
-                          panelLp.height = (newH * 0.72f).toInt().coerceAtMost((newH - 28 * d).toInt()).coerceAtLeast((300 * d).toInt())
-                          panelLp.x = (lp.x + lp.width / 2 - panelLp.width / 2).coerceIn(0, (newW - panelLp.width).coerceAtLeast(0))
-                          panelLp.y = (lp.y + lp.height / 2 + (18 * d).toInt()).coerceIn(0, (newH - panelLp.height).coerceAtLeast(0))
-                          try { windowManager.updateViewLayout(panel, panelLp) } catch (_: Exception) { }
-                      }
-                  }
-              }
-          '''
-          s = s[:start] + new_method + s[end:]
-          p.write_text(s, encoding='utf-8')
-          print('Applied orientation-aware ALISLAH bubble layout.')
-          PYBUBBLE
-
-      - name: Verify and install permanent signing key
-        shell: bash
-        run: |
-          set -euo pipefail
-          KEYSTORE="ALISLAH-Android-v2/debug.keystore"
-          test -s "$KEYSTORE"
-          mkdir -p "$HOME/.android"
-          cp "$KEYSTORE" "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          ACTUAL_KEY_SHA256="$(keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey 2>/dev/null \
-            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
-          if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::warning title=Signing certificate differs::This APK will still be built and published, but Android may reject it as an update over the currently installed ALISLAH version. You may need to uninstall the old app first; uninstalling can erase local app data unless backed up."
-            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual keystore SHA-256:       $ACTUAL_KEY_SHA256"
-            echo "SIGNING_KEY_MATCH=false" >> "$GITHUB_ENV"
-          else
-            echo "Permanent ALISLAH signing key matches the expected certificate."
-            echo "SIGNING_KEY_MATCH=true" >> "$GITHUB_ENV"
-          fi
-
-      - name: Confirm app signing configuration
-        working-directory: ALISLAH-Android-v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fq "storeFile rootProject.file('debug.keystore')" app/build.gradle
-          grep -Fq "signingConfig signingConfigs.alislah" app/build.gradle
-          echo "The debug variant is configured to use the preserved ALISLAH keystore."
-
-      - name: Run ALISLAH source checks
-        working-directory: ALISLAH-Android-v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          node tests/prayer-calc.test.js
-
-      - name: Build APK from a clean state
-        working-directory: ALISLAH-Android-v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
-          gradle --no-daemon signingReport
-
-      - name: Verify APK signature before publishing
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
-          if [ -z "$APKSIGNER" ]; then
-            echo "::error::apksigner not found; refusing to publish unchecked APK."
-            exit 1
-          fi
-          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-apk-signature.txt"
-          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-apk-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
-          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::warning title=APK update compatibility warning::The APK is validly signed, but its signing certificate differs from the expected installed-app certificate. The APK artifact will still be published. Android will normally refuse an in-place update; uninstall the existing ALISLAH app before installing this APK. Back up local data first because uninstalling may erase it."
-            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual APK certificate SHA-256: $ACTUAL_APK_SHA256"
-            echo "APK_UPDATE_COMPATIBLE=false" >> "$GITHUB_ENV"
-          else
-            echo "APK signature matches the expected ALISLAH certificate."
-            echo "APK_UPDATE_COMPATIBLE=true" >> "$GITHUB_ENV"
-          fi
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: ALISLAH-all-in-one-apk
-          path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Publish compatibility warning in workflow summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## ALISLAH APK signing compatibility"
-            if [ "${APK_UPDATE_COMPATIBLE:-false}" = "true" ]; then
-              echo "- Signing certificate matches the expected certificate. In-place update should be compatible, subject to Android package/version rules."
-            else
-              echo "- **WARNING:** APK was allowed to publish despite a signing-certificate mismatch."
-              echo "- Android will normally reject installation over an existing ALISLAH installation signed with a different key."
-              echo "- Back up app data, then uninstall the old app before installing this APK. Uninstalling may erase local data."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        '
+    - name: Verify APK signature before publishing
+      shell: bash
+      run: "set -euo pipefail\nAPK=\"ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk\"\
+        \ntest -s \"$APK\"\nAPKSIGNER=\"$(find \"$ANDROID_HOME/build-tools\" -type\
+        \ f -name apksigner -print | sort -V | tail -n 1)\"\nif [ -z \"$APKSIGNER\"\
+        \ ]; then\n  echo \"::error::apksigner not found; refusing to publish unchecked\
+        \ APK.\"\n  exit 1\nfi\n\"$APKSIGNER\" verify --verbose --print-certs \"$APK\"\
+        \ | tee \"$RUNNER_TEMP/alislah-apk-signature.txt\"\nACTUAL_APK_SHA256=\"$(sed\
+        \ -n 's/.*certificate SHA-256 digest: //p' \"$RUNNER_TEMP/alislah-apk-signature.txt\"\
+        \ | head -n 1 | tr -d ':\\r\\n ' | tr '[:lower:]' '[:upper:]')\"\nif [ \"\
+        $ACTUAL_APK_SHA256\" != \"$ALISLAH_SIGNING_CERT_SHA256\" ]; then\n  echo \"\
+        ::warning title=APK update compatibility warning::The APK is validly signed,\
+        \ but its signing certificate differs from the expected installed-app certificate.\
+        \ The APK artifact will still be published. Android will normally refuse an\
+        \ in-place update; uninstall the existing ALISLAH app before installing this\
+        \ APK. Back up local data first because uninstalling may erase it.\"\n  echo\
+        \ \"Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256\"\n  echo \"\
+        Actual APK certificate SHA-256: $ACTUAL_APK_SHA256\"\n  echo \"APK_UPDATE_COMPATIBLE=false\"\
+        \ >> \"$GITHUB_ENV\"\nelse\n  echo \"APK signature matches the expected ALISLAH\
+        \ certificate.\"\n  echo \"APK_UPDATE_COMPATIBLE=true\" >> \"$GITHUB_ENV\"\
+        \nfi\n"
+    - name: Upload APK
+      uses: actions/upload-artifact@v7
+      with:
+        name: ALISLAH-all-in-one-apk
+        path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
+        if-no-files-found: error
+    - name: Publish compatibility warning in workflow summary
+      if: always()
+      shell: bash
+      run: "{\n  echo \"## ALISLAH APK signing compatibility\"\n  if [ \"${APK_UPDATE_COMPATIBLE:-false}\"\
+        \ = \"true\" ]; then\n    echo \"- Signing certificate matches the expected\
+        \ certificate. In-place update should be compatible, subject to Android package/version\
+        \ rules.\"\n  else\n    echo \"- **WARNING:** APK was allowed to publish despite\
+        \ a signing-certificate mismatch.\"\n    echo \"- Android will normally reject\
+        \ installation over an existing ALISLAH installation signed with a different\
+        \ key.\"\n    echo \"- Back up app data, then uninstall the old app before\
+        \ installing this APK. Uninstalling may erase local data.\"\n  fi\n} >> \"\
+        $GITHUB_STEP_SUMMARY\"\n"
