@@ -1,4 +1,4 @@
-name: Build ALISLAH Android APK
+name: Build ALISLAH small APK + optional Mixer-TTS voice pack
 
 on:
   workflow_dispatch:
@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
+      ALISLAH_APK_MAX_BYTES: '5000000'
 
     steps:
       - name: Checkout repository
@@ -27,20 +28,13 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          if [ ! -d "$SDK_ROOT" ]; then
-            echo "::error::Android SDK directory was not found: $SDK_ROOT"
-            exit 1
-          fi
+          test -d "$SDK_ROOT" || { echo "::error::Android SDK not found: $SDK_ROOT"; exit 1; }
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager is missing from the runner's preinstalled Android SDK."
-            exit 1
-          fi
+          test -n "$SDKMANAGER" || { echo "::error::sdkmanager missing from Android SDK"; exit 1; }
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-          echo "Using existing Android SDK at $SDK_ROOT"
 
       - name: Install Android SDK 34 components
         shell: bash
@@ -48,7 +42,6 @@ jobs:
           set -euo pipefail
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
           test -n "$SDKMANAGER"
-          # Accept licenses without allowing yes(1)'s expected SIGPIPE to fail the job.
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
           LICENSE_STATUS=${PIPESTATUS[1]}
@@ -59,27 +52,26 @@ jobs:
           fi
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Configure isolated Gradle cache
+      - name: Configure a clean Gradle cache
         shell: bash
         run: |
           set -euo pipefail
           echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
 
-      - name: Prepare isolated Gradle cache
+      - name: Prepare a fresh Gradle cache
         shell: bash
         run: |
           set -euo pipefail
           rm -rf "$GRADLE_USER_HOME"
           mkdir -p "$GRADLE_USER_HOME"
-          echo "Using a fresh Gradle cache at $GRADLE_USER_HOME"
 
-      - name: Set up Gradle 8.13 (required by Android Gradle Plugin 8.11.1)
+      - name: Set up Gradle 8.14.6
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack exactly one Android source archive
+      - name: Unpack and preflight ALISLAH 2.1.4.9 source
         shell: bash
         run: |
           set -euo pipefail
@@ -88,247 +80,153 @@ jobs:
             echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
-          # Remove any checked-out/stale source tree before extracting the selected archive.
-          # This prevents Gradle from compiling leftover files or reusing an old APK.
-          rm -rf ALISLAH-Android-v2
-          unzip -o "${ZIP_FILES[0]}"
-          test -s ALISLAH-Android-v2/debug.keystore
-          test -s ALISLAH-Android-v2/app/build.gradle
-          echo "Source archive extracted into a clean directory."
+          rm -rf ALISLAH-Android-v2 ALISLAH-Voice-Pack
+          unzip -q "${ZIP_FILES[0]}"
+          ROOT="$PWD/ALISLAH-Android-v2"
+          PACK="$PWD/ALISLAH-Voice-Pack"
+          test -s "$ROOT/debug.keystore"
+          test -s "$ROOT/app/build.gradle"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/OptionalVoicePackBridge.kt"
+          test -s "$PACK/app/src/main/java/dz/alislah/voicepack/VoicePackService.kt"
+          grep -Fq "versionCode 39" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.9'" "$ROOT/app/build.gradle"
+          ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
+          ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
+          python3 "$ROOT/tests/verify-optional-voice-pack.py"
+          echo "ALISLAH core is Flutter-free; Mixer-TTS is isolated in the optional companion app."
 
-      - name: Remove optional Mixer-TTS source assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          # ALISLAH is built without the optional Mixer-TTS engine or its model files.
-          rm -rf ALISLAH-Android-v2/flutter_tts_module
-          rm -rf ALISLAH-Android-v2/flutter_tts_generated
-          echo "Mixer-TTS has been excluded from this APK build."
-
-      - name: Remove Mixer-TTS and Flutter integration cleanly
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYFIX'
-          from pathlib import Path
-          import re
-          root = Path('ALISLAH-Android-v2')
-
-          # Remove the obsolete Flutter module include from Gradle settings.
-          settings = root / 'settings.gradle'
-          lines = settings.read_text(encoding='utf-8').splitlines()
-          kept = [line for line in lines if not re.search(
-              r'flutter_tts_generated|include_flutter\.groovy|include\s*\(?\s*[\'\"]:flutter[\'\"]', line
-          )]
-          settings.write_text('\n'.join(line for line in kept if 'CI workflow generates this Flutter module' not in line and 'setBinding(new Binding' not in line) + '\n', encoding='utf-8')
-
-          # The app's only Gradle dependency on Flutter is the Mixer-TTS engine.
-          app_gradle = root / 'app/build.gradle'
-          text = app_gradle.read_text(encoding='utf-8')
-          text = re.sub(r"(?m)^\s*implementation\s+project\s*\(\s*['\"]:flutter['\"]\s*\)\s*;?\s*$\n?", '', text)
-          app_gradle.write_text(text, encoding='utf-8')
-
-          # Remove Flutter engine imports, state, and lifecycle methods from MainActivity.
-          main = root / 'app/src/main/java/dz/alislah/app/MainActivity.kt'
-          s = main.read_text(encoding='utf-8')
-          s = re.sub(r'(?m)^import io\.flutter\.[^\n]*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerFlutterEngine:.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerTtsChannel:.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var mixerTtsReady\s*=.*\n', '', s)
-          s = re.sub(r'(?m)^\s*private var pendingMixerTtsText:.*\n', '', s)
-          start = s.find('    private fun dispatchMixerVoiceStatus(')
-          end = s.find('    override fun onCreate(', start)
-          if start != -1 and end != -1:
-              s = s[:start] + s[end:]
-          s = re.sub(r'(?m)^\s*try \{ stopMixerTts\(\); mixerFlutterEngine\?\.destroy\(\) \} catch \(_:\s*Exception\) \{ \}\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerFlutterEngine = null\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerTtsChannel = null\n', '', s)
-          s = re.sub(r'(?m)^\s*mixerTtsReady = false\n', '', s)
-          # Replace the bridge methods that previously invoked Mixer-TTS with the existing native TTS service.
-          start = s.find('        @JavascriptInterface fun speakDisplayedAyah(text: String)')
-          end = s.find('        @JavascriptInterface fun playAdhanTest()', start)
-          if start == -1 or end == -1:
-              raise SystemExit('Could not locate assistant voice bridge block in MainActivity.kt')
-          bridge = '''        private fun speakWithExistingAssistant(text: String) {
-                      val clean = text.trim().take(700)
-                      if (clean.isBlank()) return
-                      val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply {
-                          action = FloatingBubbleService.ACTION_SPEAK_TEXT
-                          putExtra(FloatingBubbleService.EXTRA_SPEAK_TEXT, clean)
-                      }
-                      try {
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  }
-                  @JavascriptInterface fun speakDisplayedAyah(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
-                  @JavascriptInterface fun speakAssistantText(text: String) { runOnUiThread { speakWithExistingAssistant(text) } }
-                  @JavascriptInterface fun stopAssistantSpeech() { runOnUiThread {
-                      try {
-                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_STOP_SPEECH }
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  } }
-                  @JavascriptInterface fun setAssistantVoiceMode(mode: String) { prefs.edit().putString("voiceMode", if (mode == "text" || mode == "voice" || mode == "both") mode else "both").apply() }
-                  @JavascriptInterface fun testAssistantVoice() { runOnUiThread {
-                      try {
-                          val i = Intent(this@MainActivity, FloatingBubbleService::class.java).apply { action = FloatingBubbleService.ACTION_SPEAK_TEST }
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-                      } catch (_: Exception) { }
-                  } }
-          '''
-          s = s[:start] + bridge + s[end:]
-          # Keep the legacy voice as the only selectable engine in this build.
-          s = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
-                     '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs.edit().putString("assistantVoiceEngine", "old").apply() }', s)
-          main.write_text(s, encoding='utf-8')
-
-
-          # Force the floating assistant to use its existing Android TTS engine (with local fallback).
-          service = root / 'app/src/main/java/dz/alislah/app/FloatingBubbleService.kt'
-          svc = service.read_text(encoding='utf-8')
-          start = svc.find('        // The selected engine controls assistant speech and displayed Quran verses alike.')
-          end = svc.find('    }\n\n    private fun speakWithAndroidTts', start)
-          if start != -1 and end != -1:
-              svc = svc[:start] + '        speakWithAndroidTts(speechText, quranLike)\n' + svc[end:]
-          svc = re.sub(r'@JavascriptInterface fun setAssistantVoiceEngine\(engine: String\) \{[^}]*\}',
-                       '@JavascriptInterface fun setAssistantVoiceEngine(engine: String) { prefs().edit().putString("assistantVoiceEngine", "old").apply() }', svc)
-          svc = svc.replace('assistantWebView?.evaluateJavascript("window.AlishlahNeuralVoice&&window.AlishlahNeuralVoice.stop()", null); stopReminderSpeech()', 'stopReminderSpeech()')
-          start = svc.find('        @JavascriptInterface fun onNeuralSpeechResult(success: Boolean, detail: String)')
-          end = svc.find('        @JavascriptInterface fun setAssistantVoiceMode(', start)
-          if start != -1 and end != -1:
-              svc = svc[:start] + svc[end:]
-          service.write_text(svc, encoding='utf-8')
-
-          # Remove the obsolete neural engine script from the app page.
-          index = root / 'app/src/main/assets/index.html'
-          html = index.read_text(encoding='utf-8')
-          html = html.replace('<script src="js/neural-voice.js"></script>', '')
-          index.write_text(html, encoding='utf-8')
-
-          # Make the voice settings UI expose only the existing native assistant.
-          js = root / 'app/src/main/assets/js/main.js'
-          js_text = js.read_text(encoding='utf-8')
-          js_text = js_text.replace('<option value="old">المساعد القديم (محلي)</option><option value="neural">المساعد العربي العصبي الجديد (محلي)</option>',
-                                    '<option value="old">المساعد الحالي (محلي)</option>')
-          js_text = js_text.replace("engineSelect.value=data.settings.assistantVoiceEngine||'neural';", "engineSelect.value='old';data.settings.assistantVoiceEngine='old';")
-          js_text = js_text.replace("engineSelect.value==='neural'?'المحرك المختار: العصبي الجديد — يعمل محليًا دون إنترنت':'المحرك المختار: القديم — يعمل محليًا'", "'المساعد الحالي يعمل محليًا'")
-          js.write_text(js_text, encoding='utf-8')
-
-          # Delete the now-unused Mixer-TTS assets/modules.
-          for rel in ('flutter_tts_module', 'flutter_tts_generated'):
-              p = root / rel
-              if p.exists():
-                  import shutil
-                  shutil.rmtree(p)
-          voice_js = root / 'app/src/main/assets/js/neural-voice.js'
-          if voice_js.exists():
-              voice_js.unlink()
-
-          # Fail early if Gradle or native source still references the removed Flutter engine.
-          checks = [settings, app_gradle, main, service, index, js]
-          patterns = re.compile(r'flutter_tts_generated|include_flutter\.groovy|project\s*\(\s*[\'\"]:flutter[\'\"]\s*\)|io\.flutter\.|mixerFlutterEngine|mixerTtsChannel|mixerTtsReady|speakMixerTts|stopMixerTts|onNeuralSpeechResult|Mixer-TTS', re.I)
-          leftovers = []
-          for f in checks:
-              for n, line in enumerate(f.read_text(encoding='utf-8').splitlines(), 1):
-                  if patterns.search(line):
-                      leftovers.append(f'{f}:{n}:{line.strip()}')
-          if leftovers:
-              raise SystemExit('Mixer/Flutter references remain:\n' + '\n'.join(leftovers))
-          print('Mixer-TTS removed: Gradle settings/dependency, native Flutter engine bridge, and neural voice UI.')
-          PYFIX
-
-      # The 2.1.4.8 source archive already contains the portrait/landscape bubble
-      # anchors and navigation-bar layout. Do not reapply the older source patch.
-
-      - name: Verify and install permanent signing key
+      - name: Verify permanent signing key before building
         shell: bash
         run: |
           set -euo pipefail
           KEYSTORE="ALISLAH-Android-v2/debug.keystore"
-          test -s "$KEYSTORE"
-          mkdir -p "$HOME/.android"
-          cp "$KEYSTORE" "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          ACTUAL_KEY_SHA256="$(keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey 2>/dev/null \
-            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
           if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::warning title=Signing certificate differs::This APK will still be built and published, but Android may reject it as an update over the currently installed ALISLAH version. You may need to uninstall the old app first; uninstalling can erase local app data unless backed up."
-            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual keystore SHA-256:       $ACTUAL_KEY_SHA256"
-            echo "SIGNING_KEY_MATCH=false" >> "$GITHUB_ENV"
-          else
-            echo "Permanent ALISLAH signing key matches the expected certificate."
-            echo "SIGNING_KEY_MATCH=true" >> "$GITHUB_ENV"
+            echo "::error::Signing key changed; refusing to build an APK that may not update the installed app."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_KEY_SHA256"
+            exit 1
           fi
+          cp "$KEYSTORE" ALISLAH-Voice-Pack/debug.keystore
+          echo "ALISLAH signing key verified and copied unchanged to the optional voice pack."
 
-      - name: Confirm app signing configuration
-        working-directory: ALISLAH-Android-v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fq "storeFile rootProject.file('debug.keystore')" app/build.gradle
-          grep -Fq "signingConfig signingConfigs.alislah" app/build.gradle
-          echo "The debug variant is configured to use the preserved ALISLAH keystore."
-
-      - name: Run ALISLAH source checks
+      - name: Run ALISLAH source tests
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
           set -euo pipefail
           node tests/prayer-calc.test.js
 
-      - name: Build APK from a clean state
+      - name: Build the small core APK without Flutter
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
           set -euo pipefail
+          gradle --version
           gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
-          gradle --no-daemon signingReport
 
-      - name: Verify APK signature before publishing
+      - name: Warn if core APK exceeds 5 MB and verify signature
         shell: bash
         run: |
           set -euo pipefail
           APK="ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
+          SIZE="$(stat -c%s "$APK")"
+          echo "Core APK size: $SIZE bytes"
+          if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
+            echo "::warning::Core APK exceeds the recommended 5,000,000-byte target ($SIZE bytes). The APK will still be verified and published."
+          else
+            echo "Core APK is within the recommended 5,000,000-byte target."
+          fi
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
-          if [ -z "$APKSIGNER" ]; then
-            echo "::error::apksigner not found; refusing to publish unchecked APK."
+          test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
+          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
+          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Core APK signing certificate mismatch; artifact will not be published."
             exit 1
           fi
-          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-apk-signature.txt"
-          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-apk-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
-          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::warning title=APK update compatibility warning::The APK is validly signed, but its signing certificate differs from the expected installed-app certificate. The APK artifact will still be published. Android will normally refuse an in-place update; uninstall the existing ALISLAH app before installing this APK. Back up local data first because uninstalling may erase it."
-            echo "Expected certificate SHA-256: $ALISLAH_SIGNING_CERT_SHA256"
-            echo "Actual APK certificate SHA-256: $ACTUAL_APK_SHA256"
-            echo "APK_UPDATE_COMPATIBLE=false" >> "$GITHUB_ENV"
-          else
-            echo "APK signature matches the expected ALISLAH certificate."
-            echo "APK_UPDATE_COMPATIBLE=true" >> "$GITHUB_ENV"
-          fi
+          echo "Core APK signature verified; size advisory completed."
 
-      - name: Upload APK
+      - name: Upload the core ALISLAH APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-all-in-one-apk
+          name: ALISLAH-2.1.4.9-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Publish compatibility warning in workflow summary
-        if: always()
+      - name: Set up Flutter only for the optional voice pack
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Generate optional Flutter voice module and download its models
         shell: bash
         run: |
-          {
-            echo "## ALISLAH APK signing compatibility"
-            if [ "${APK_UPDATE_COMPATIBLE:-false}" = "true" ]; then
-              echo "- Signing certificate matches the expected certificate. In-place update should be compatible, subject to Android package/version rules."
-            else
-              echo "- **WARNING:** APK was allowed to publish despite a signing-certificate mismatch."
-              echo "- Android will normally reject installation over an existing ALISLAH installation signed with a different key."
-              echo "- Back up app data, then uninstall the old app before installing this APK. Uninstalling may erase local data."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          PACK="$PWD/ALISLAH-Voice-Pack"
+          MODULE="$PACK/flutter_tts_generated"
+          rm -rf "$MODULE"
+          flutter create --template=module --org dz.alislah.voicepack --project-name alislah_tts "$MODULE"
+          cp -a ALISLAH-Android-v2/flutter_tts_module/lib/. "$MODULE/lib/"
+          cp ALISLAH-Android-v2/flutter_tts_module/pubspec.yaml "$MODULE/pubspec.yaml"
+          mkdir -p "$MODULE/assets/models"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/mixer128.onnx?download=true" \
+            -o "$MODULE/assets/models/mixer128.onnx"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/vocos22.onnx?download=true" \
+            -o "$MODULE/assets/models/vocos22.onnx"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/shakkelha.onnx?download=true" \
+            -o "$MODULE/assets/models/shakkelha.onnx"
+          test "$(stat -c%s "$MODULE/assets/models/mixer128.onnx")" -gt 1000000
+          test "$(stat -c%s "$MODULE/assets/models/vocos22.onnx")" -gt 10000000
+          test "$(stat -c%s "$MODULE/assets/models/shakkelha.onnx")" -gt 1000000
+          (cd "$MODULE" && flutter pub get)
+          test -s "$MODULE/.android/include_flutter.groovy"
+          echo "The optional offline Arabic voice models are ready."
+
+      - name: Verify optional voice pack integration and shared signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK="$PWD/ALISLAH-Voice-Pack"
+          grep -Fq "flutter_tts_generated/.android/include_flutter.groovy" "$PACK/settings.gradle"
+          grep -Fq "implementation project(':flutter')" "$PACK/app/build.gradle"
+          grep -Fq "storeFile rootProject.file('debug.keystore')" "$PACK/app/build.gradle"
+          grep -Fq "signingConfig signingConfigs.alislah" "$PACK/app/build.gradle"
+          grep -Fq "dz.alislah.voicepack.permission.USE" "$PACK/app/src/main/AndroidManifest.xml"
+          grep -Fq "finished" "$PWD/ALISLAH-Android-v2/flutter_tts_module/lib/main.dart"
+          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$PACK/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          test "$ACTUAL_KEY_SHA256" = "$ALISLAH_SIGNING_CERT_SHA256"
+
+      - name: Build optional ALISLAH Mixer-TTS voice pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p ALISLAH-Voice-Pack --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
+
+      - name: Verify optional voice pack APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="ALISLAH-Voice-Pack/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-voice-pack-signature.txt"
+          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-voice-pack-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
+          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Voice-pack signing certificate mismatch."
+            exit 1
+          fi
+          echo "Optional voice pack signature verified."
+
+      - name: Upload optional ALISLAH Mixer-TTS voice pack
+        uses: actions/upload-artifact@v7
+        with:
+          name: ALISLAH-Voice-Pack-Mixer-TTS-Optional
+          path: ALISLAH-Voice-Pack/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
