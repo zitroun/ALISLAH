@@ -1,4 +1,4 @@
-name: Build ALISLAH small APK + optional Mixer-TTS voice pack
+name: Build ALISLAH 2.1.4.10 Core APK only (voice tasks, no Mixer-TTS)
 
 on:
   workflow_dispatch:
@@ -71,29 +71,29 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.9 source
+      - name: Unpack and preflight ALISLAH 2.1.4.10 voice-task source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.10-voice-task-navfix.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.10-voice-task-navfix.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
-          rm -rf ALISLAH-Android-v2 ALISLAH-Voice-Pack
+          rm -rf ALISLAH-Android-v2
           unzip -q "${ZIP_FILES[0]}"
           ROOT="$PWD/ALISLAH-Android-v2"
-          PACK="$PWD/ALISLAH-Voice-Pack"
           test -s "$ROOT/debug.keystore"
           test -s "$ROOT/app/build.gradle"
-          test -s "$ROOT/app/src/main/java/dz/alislah/app/OptionalVoicePackBridge.kt"
-          test -s "$PACK/app/src/main/java/dz/alislah/voicepack/VoicePackService.kt"
-          grep -Fq "versionCode 39" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.9'" "$ROOT/app/build.gradle"
+          test -s "$ROOT/app/src/main/assets/index.html"
+          test -s "$ROOT/app/src/main/assets/js/voice-task-parser.js"
+          test -s "$ROOT/tests/voice-task-parser.test.js"
+          test -s "$ROOT/tests/voice-task-integration.test.py"
+          grep -Fq "versionCode 40" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.10'" "$ROOT/app/build.gradle"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
-          python3 "$ROOT/tests/verify-optional-voice-pack.py"
-          echo "ALISLAH core is Flutter-free; Mixer-TTS is isolated in the optional companion app."
+          echo "ALISLAH core is Flutter-free; only the core APK will be built."
 
       - name: Verify permanent signing key before building
         shell: bash
@@ -107,8 +107,7 @@ jobs:
             echo "Actual:   $ACTUAL_KEY_SHA256"
             exit 1
           fi
-          cp "$KEYSTORE" ALISLAH-Voice-Pack/debug.keystore
-          echo "ALISLAH signing key verified and copied unchanged to the optional voice pack."
+          echo "ALISLAH signing key verified unchanged."
 
       - name: Run ALISLAH source tests
         working-directory: ALISLAH-Android-v2
@@ -116,6 +115,8 @@ jobs:
         run: |
           set -euo pipefail
           node tests/prayer-calc.test.js
+          node tests/voice-task-parser.test.js
+          python3 tests/voice-task-integration.test.py
 
       - name: Build the small core APK without Flutter
         working-directory: ALISLAH-Android-v2
@@ -151,82 +152,7 @@ jobs:
       - name: Upload the core ALISLAH APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-2.1.4.9-Core-APK
+          name: ALISLAH-2.1.4.10-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Set up Flutter only for the optional voice pack
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.5'
-          channel: stable
-          cache: true
-
-      - name: Generate optional Flutter voice module and download its models
-        shell: bash
-        run: |
-          set -euo pipefail
-          PACK="$PWD/ALISLAH-Voice-Pack"
-          MODULE="$PACK/flutter_tts_generated"
-          rm -rf "$MODULE"
-          flutter create --template=module --org dz.alislah.voicepack --project-name alislah_tts "$MODULE"
-          cp -a ALISLAH-Android-v2/flutter_tts_module/lib/. "$MODULE/lib/"
-          cp ALISLAH-Android-v2/flutter_tts_module/pubspec.yaml "$MODULE/pubspec.yaml"
-          mkdir -p "$MODULE/assets/models"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/mixer128.onnx?download=true" \
-            -o "$MODULE/assets/models/mixer128.onnx"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/vocos22.onnx?download=true" \
-            -o "$MODULE/assets/models/vocos22.onnx"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://huggingface.co/nipponjo/tts-arabic-onnx/resolve/main/shakkelha.onnx?download=true" \
-            -o "$MODULE/assets/models/shakkelha.onnx"
-          test "$(stat -c%s "$MODULE/assets/models/mixer128.onnx")" -gt 1000000
-          test "$(stat -c%s "$MODULE/assets/models/vocos22.onnx")" -gt 10000000
-          test "$(stat -c%s "$MODULE/assets/models/shakkelha.onnx")" -gt 1000000
-          (cd "$MODULE" && flutter pub get)
-          test -s "$MODULE/.android/include_flutter.groovy"
-          echo "The optional offline Arabic voice models are ready."
-
-      - name: Verify optional voice pack integration and shared signature
-        shell: bash
-        run: |
-          set -euo pipefail
-          PACK="$PWD/ALISLAH-Voice-Pack"
-          grep -Fq "flutter_tts_generated/.android/include_flutter.groovy" "$PACK/settings.gradle"
-          grep -Fq "implementation project(':flutter')" "$PACK/app/build.gradle"
-          grep -Fq "storeFile rootProject.file('debug.keystore')" "$PACK/app/build.gradle"
-          grep -Fq "signingConfig signingConfigs.alislah" "$PACK/app/build.gradle"
-          grep -Fq "dz.alislah.voicepack.permission.USE" "$PACK/app/src/main/AndroidManifest.xml"
-          grep -Fq "finished" "$PWD/ALISLAH-Android-v2/flutter_tts_module/lib/main.dart"
-          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$PACK/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
-          test "$ACTUAL_KEY_SHA256" = "$ALISLAH_SIGNING_CERT_SHA256"
-
-      - name: Build optional ALISLAH Mixer-TTS voice pack
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle -p ALISLAH-Voice-Pack --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
-
-      - name: Verify optional voice pack APK signature
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="ALISLAH-Voice-Pack/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-voice-pack-signature.txt"
-          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-voice-pack-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
-          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::Voice-pack signing certificate mismatch."
-            exit 1
-          fi
-          echo "Optional voice pack signature verified."
-
-      - name: Upload optional ALISLAH Mixer-TTS voice pack
-        uses: actions/upload-artifact@v7
-        with:
-          name: ALISLAH-Voice-Pack-Mixer-TTS-Optional
-          path: ALISLAH-Voice-Pack/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
