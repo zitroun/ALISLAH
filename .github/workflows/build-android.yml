@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.10 Core APK only (voice tasks, no Mixer-TTS)
+name: Build ALISLAH 2.1.4.13 Core APK only (speech waveform, no Mixer-TTS)
 
 on:
   workflow_dispatch:
@@ -71,13 +71,13 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.10 voice-task source
+      - name: Unpack and preflight ALISLAH 2.1.4.13 source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.10-voice-task-navfix.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.13-speech-wave-stop.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.10-voice-task-navfix.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.13-speech-wave-stop.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
           rm -rf ALISLAH-Android-v2
@@ -87,13 +87,16 @@ jobs:
           test -s "$ROOT/app/build.gradle"
           test -s "$ROOT/app/src/main/assets/index.html"
           test -s "$ROOT/app/src/main/assets/js/voice-task-parser.js"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           test -s "$ROOT/tests/voice-task-parser.test.js"
           test -s "$ROOT/tests/voice-task-integration.test.py"
-          grep -Fq "versionCode 40" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.10'" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 43" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.13'" "$ROOT/app/build.gradle"
+          grep -Fq 'wavePaint' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'speakingTapConsumed' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
-          echo "ALISLAH core is Flutter-free; only the core APK will be built."
+          echo "ALISLAH core is Flutter-free; no Mixer-TTS model is included."
 
       - name: Verify permanent signing key before building
         shell: bash
@@ -152,7 +155,6 @@ jobs:
       - name: Upload the core ALISLAH APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-2.1.4.10-Core-APK
+          name: ALISLAH-2.1.4.13-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
