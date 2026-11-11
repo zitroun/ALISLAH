@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.13 Core APK only (speech waveform, no Mixer-TTS)
+name: Build ALISLAH 2.1.4.15 Core APK only
 
 on:
   workflow_dispatch:
@@ -23,14 +23,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Locate the preinstalled Android SDK
+      - name: Locate Android SDK
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           test -d "$SDK_ROOT" || { echo "::error::Android SDK not found: $SDK_ROOT"; exit 1; }
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
-          test -n "$SDKMANAGER" || { echo "::error::sdkmanager missing from Android SDK"; exit 1; }
+          test -n "$SDKMANAGER" || { echo "::error::sdkmanager missing"; exit 1; }
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
@@ -41,29 +41,19 @@ jobs:
         run: |
           set -euo pipefail
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
-          test -n "$SDKMANAGER"
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
           LICENSE_STATUS=${PIPESTATUS[1]}
           set -o pipefail
-          if [ "$LICENSE_STATUS" -ne 0 ]; then
-            echo "::error::Android SDK license acceptance failed."
-            exit "$LICENSE_STATUS"
-          fi
+          test "$LICENSE_STATUS" -eq 0 || { echo "::error::Android SDK license acceptance failed"; exit "$LICENSE_STATUS"; }
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Configure a clean Gradle cache
+      - name: Prepare isolated Gradle cache
         shell: bash
         run: |
           set -euo pipefail
           echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
-
-      - name: Prepare a fresh Gradle cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf "$GRADLE_USER_HOME"
-          mkdir -p "$GRADLE_USER_HOME"
+          mkdir -p "$RUNNER_TEMP/alislah-gradle-home"
 
       - name: Set up Gradle 8.14.6
         uses: gradle/actions/setup-gradle@v6
@@ -71,32 +61,39 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.13 source
+      - name: Unpack and preflight ALISLAH 2.1.4.15 source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.13-speech-wave-stop.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.13-speech-wave-stop.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
-          rm -rf ALISLAH-Android-v2
           unzip -q "${ZIP_FILES[0]}"
           ROOT="$PWD/ALISLAH-Android-v2"
           test -s "$ROOT/debug.keystore"
           test -s "$ROOT/app/build.gradle"
           test -s "$ROOT/app/src/main/assets/index.html"
+          test -s "$ROOT/app/src/main/assets/js/main.js"
           test -s "$ROOT/app/src/main/assets/js/voice-task-parser.js"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           test -s "$ROOT/tests/voice-task-parser.test.js"
           test -s "$ROOT/tests/voice-task-integration.test.py"
-          grep -Fq "versionCode 43" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.13'" "$ROOT/app/build.gradle"
-          grep -Fq 'wavePaint' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq 'speakingTapConsumed' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionCode 45" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.15'" "$ROOT/app/build.gradle"
+          grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
+          grep -Fq 'setAudioAttributes(attrs)' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'assistantStopBubble' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'data.pendingVoiceTask=draft' "$ROOT/app/src/main/assets/js/main.js"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
-          echo "ALISLAH core is Flutter-free; no Mixer-TTS model is included."
+          echo "ALISLAH core source preflight passed; no Mixer-TTS models included."
 
       - name: Verify permanent signing key before building
         shell: bash
@@ -112,7 +109,7 @@ jobs:
           fi
           echo "ALISLAH signing key verified unchanged."
 
-      - name: Run ALISLAH source tests
+      - name: Run source tests
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
@@ -121,7 +118,7 @@ jobs:
           node tests/voice-task-parser.test.js
           python3 tests/voice-task-integration.test.py
 
-      - name: Build the small core APK without Flutter
+      - name: Build core APK without Flutter
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
@@ -129,7 +126,7 @@ jobs:
           gradle --version
           gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
 
-      - name: Warn if core APK exceeds 5 MB and verify signature
+      - name: Verify APK and report size
         shell: bash
         run: |
           set -euo pipefail
@@ -138,23 +135,23 @@ jobs:
           SIZE="$(stat -c%s "$APK")"
           echo "Core APK size: $SIZE bytes"
           if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
-            echo "::warning::Core APK exceeds the recommended 5,000,000-byte target ($SIZE bytes). The APK will still be verified and published."
-          else
-            echo "Core APK is within the recommended 5,000,000-byte target."
+            echo "::warning::Core APK exceeds the recommended 5 MB target; it will still be published."
           fi
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
           ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
           if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::Core APK signing certificate mismatch; artifact will not be published."
+            echo "::error::APK signing certificate mismatch; artifact will not be published."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_APK_SHA256"
             exit 1
           fi
-          echo "Core APK signature verified; size advisory completed."
+          echo "Core APK signature verified."
 
-      - name: Upload the core ALISLAH APK
+      - name: Upload ALISLAH 2.1.4.15 core APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-2.1.4.13-Core-APK
+          name: ALISLAH-2.1.4.15-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
