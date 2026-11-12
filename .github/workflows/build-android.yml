@@ -61,17 +61,28 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.15 source
+      - name: Locate, unpack and preflight ALISLAH 2.1.4.15 source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 2 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip' -print)
-          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip, found ${#ZIP_FILES[@]}"
-            exit 1
+
+          # Prefer the corrected archive; fall back to the original 2.1.4.15 archive.
+          FIXED_ZIP="$(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options-fixed.zip' -print -quit)"
+          if [ -n "$FIXED_ZIP" ]; then
+            SOURCE_ZIP="$FIXED_ZIP"
+          else
+            mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip' -print)
+            if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+              echo "::error::Place exactly one 2.1.4.15 source ZIP in the repository. Found ${#ZIP_FILES[@]} original archives and no corrected archive."
+              exit 1
+            fi
+            SOURCE_ZIP="${ZIP_FILES[0]}"
           fi
-          unzip -q "${ZIP_FILES[0]}"
+
+          echo "Using source archive: $SOURCE_ZIP"
+          unzip -q "$SOURCE_ZIP"
           ROOT="$PWD/ALISLAH-Android-v2"
+
           test -s "$ROOT/debug.keystore"
           test -s "$ROOT/app/build.gradle"
           test -s "$ROOT/app/src/main/assets/index.html"
@@ -81,19 +92,29 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           test -s "$ROOT/tests/voice-task-parser.test.js"
           test -s "$ROOT/tests/voice-task-integration.test.py"
+
           grep -Fq "versionCode 45" "$ROOT/app/build.gradle"
           grep -Fq "versionName '2.1.4.15'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'import android.media.AudioManager' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           grep -Fq 'setAudioAttributes(attrs)' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'assistantStopBubble' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'data.pendingVoiceTask=draft' "$ROOT/app/src/main/assets/js/main.js"
-          ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
-          ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
-          echo "ALISLAH core source preflight passed; no Mixer-TTS models included."
+
+          if grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"; then
+            echo "::error::Unexpected Flutter dependency found in the core-only source."
+            exit 1
+          fi
+          if find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .; then
+            echo "::error::Unexpected large TTS model found; this build must not include Mixer-TTS."
+            exit 1
+          fi
+
+          echo "ALISLAH 2.1.4.15 source preflight passed; Mixer-TTS models are not included."
 
       - name: Verify permanent signing key before building
         shell: bash
@@ -137,9 +158,11 @@ jobs:
           if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
             echo "::warning::Core APK exceeds the recommended 5 MB target; it will still be published."
           fi
+
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
+
           ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
           if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
             echo "::error::APK signing certificate mismatch; artifact will not be published."
