@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.15 Core APK only
+name: Build ALISLAH 2.1.4.17 Core APK (protected signing)
 
 on:
   workflow_dispatch:
@@ -22,6 +22,31 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Load the existing signing key from GitHub Actions secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ALISLAH_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ALISLAH_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALISLAH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALISLAH_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: ALISLAH_${name/KEYSTORE_BASE64/KEYSTORE_BASE64}"
+              echo "Add the four ALISLAH signing secrets using the Arabic setup guide before running this workflow."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/alislah-signing.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          printf '%s\n' "ALISLAH_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "Existing ALISLAH signing key loaded from Actions secrets."
 
       - name: Locate Android SDK
         shell: bash
@@ -61,29 +86,17 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Locate, unpack and preflight ALISLAH 2.1.4.15 source
+      - name: Unpack and preflight ALISLAH 2.1.4.17 source
         shell: bash
         run: |
           set -euo pipefail
-
-          # Prefer the corrected archive; fall back to the original 2.1.4.15 archive.
-          FIXED_ZIP="$(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options-fixed.zip' -print -quit)"
-          if [ -n "$FIXED_ZIP" ]; then
-            SOURCE_ZIP="$FIXED_ZIP"
-          else
-            mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.15-audio-control-options.zip' -print)
-            if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-              echo "::error::Place exactly one 2.1.4.15 source ZIP in the repository. Found ${#ZIP_FILES[@]} original archives and no corrected archive."
-              exit 1
-            fi
-            SOURCE_ZIP="${ZIP_FILES[0]}"
+          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.17-protection-dashboard.zip' -print)
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.17-protection-dashboard.zip, found ${#ZIP_FILES[@]}"
+            exit 1
           fi
-
-          echo "Using source archive: $SOURCE_ZIP"
-          unzip -q "$SOURCE_ZIP"
+          unzip -q "${ZIP_FILES[0]}"
           ROOT="$PWD/ALISLAH-Android-v2"
-
-          test -s "$ROOT/debug.keystore"
           test -s "$ROOT/app/build.gradle"
           test -s "$ROOT/app/src/main/assets/index.html"
           test -s "$ROOT/app/src/main/assets/js/main.js"
@@ -92,36 +105,43 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           test -s "$ROOT/tests/voice-task-parser.test.js"
           test -s "$ROOT/tests/voice-task-integration.test.py"
-
-          grep -Fq "versionCode 45" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.15'" "$ROOT/app/build.gradle"
+          test -s "$ROOT/app/src/main/assets/js/task-planner.js"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerResponseReceiver.kt"
+          test -s "$ROOT/tests/task-planner.test.js"
+          test -s "$ROOT/tests/prayer-response.test.js"
+          test -s "$ROOT/tests/native-feature-contracts.test.py"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/ChildProtectionService.kt"
+          test -s "$ROOT/app/src/main/assets/js/dashboard.js"
+          test -s "$ROOT/tests/child-dashboard-contracts.test.py"
+          grep -Fq "versionCode 47" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.17'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
-          grep -Fq 'import android.media.AudioManager' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           grep -Fq 'setAudioAttributes(attrs)' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'assistantStopBubble' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'data.pendingVoiceTask=draft' "$ROOT/app/src/main/assets/js/main.js"
-
-          if grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"; then
-            echo "::error::Unexpected Flutter dependency found in the core-only source."
-            exit 1
-          fi
-          if find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .; then
-            echo "::error::Unexpected large TTS model found; this build must not include Mixer-TTS."
-            exit 1
-          fi
-
-          echo "ALISLAH 2.1.4.15 source preflight passed; Mixer-TTS models are not included."
+          grep -Fq 'consumePrayerResponsesJson' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'نعم، صليت' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'ليس بعد' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'findPostponeSlot' "$ROOT/app/src/main/assets/js/task-planner.js"
+          grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "versionCode 47" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.17'" "$ROOT/app/build.gradle"
+          ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
+          ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
+          echo "ALISLAH core source preflight passed; no Mixer-TTS models or signing keystore included."
 
       - name: Verify permanent signing key before building
         shell: bash
         run: |
           set -euo pipefail
-          KEYSTORE="ALISLAH-Android-v2/debug.keystore"
-          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          KEYSTORE="$ALISLAH_KEYSTORE_PATH"
+          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$ALISLAH_KEYSTORE_PASSWORD" -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
           if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
             echo "::error::Signing key changed; refusing to build an APK that may not update the installed app."
             echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
@@ -137,7 +157,22 @@ jobs:
           set -euo pipefail
           node tests/prayer-calc.test.js
           node tests/voice-task-parser.test.js
+          node tests/task-planner.test.js
+          node tests/prayer-response.test.js
           python3 tests/voice-task-integration.test.py
+          python3 tests/native-feature-contracts.test.py
+          python3 tests/child-dashboard-contracts.test.py
+
+      - name: Check modified JavaScript syntax
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/js/main.js
+          node --check app/src/main/assets/js/task-planner.js
+          node --check app/src/main/assets/js/prayer.js
+          node --check app/src/main/assets/js/family.js
+          node --check app/src/main/assets/js/dashboard.js
 
       - name: Build core APK without Flutter
         working-directory: ALISLAH-Android-v2
@@ -158,11 +193,9 @@ jobs:
           if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
             echo "::warning::Core APK exceeds the recommended 5 MB target; it will still be published."
           fi
-
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
-
           ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
           if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
             echo "::error::APK signing certificate mismatch; artifact will not be published."
@@ -172,9 +205,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.15 core APK
+      - name: Upload ALISLAH 2.1.4.17 core APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-2.1.4.15-Core-APK
+          name: ALISLAH-2.1.4.17-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
