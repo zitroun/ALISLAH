@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.17 Core APK (protected signing)
+name: Build ALISLAH 2.1.4.20 Core APK (protected signing)
 
 on:
   workflow_dispatch:
@@ -34,8 +34,14 @@ jobs:
           set -euo pipefail
           for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub Actions secret: ALISLAH_${name/KEYSTORE_BASE64/KEYSTORE_BASE64}"
-              echo "Add the four ALISLAH signing secrets using the Arabic setup guide before running this workflow."
+              case "$name" in
+                KEYSTORE_BASE64) secret_name="ALISLAH_KEYSTORE_BASE64" ;;
+                KEYSTORE_PASSWORD) secret_name="ALISLAH_KEYSTORE_PASSWORD" ;;
+                KEY_ALIAS) secret_name="ALISLAH_KEY_ALIAS" ;;
+                KEY_PASSWORD) secret_name="ALISLAH_KEY_PASSWORD" ;;
+              esac
+              echo "::error::Missing GitHub Actions secret: $secret_name"
+              echo "Add all four ALISLAH signing secrets before running this workflow."
               exit 1
             fi
           done
@@ -86,13 +92,13 @@ jobs:
           gradle-version: '8.14.6'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.17 source
+      - name: Unpack and preflight ALISLAH 2.1.4.20 source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.17-protection-dashboard.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.20-complete-controls.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.17-protection-dashboard.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.20-complete-controls.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
           unzip -q "${ZIP_FILES[0]}"
@@ -113,8 +119,13 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/ChildProtectionService.kt"
           test -s "$ROOT/app/src/main/assets/js/dashboard.js"
           test -s "$ROOT/tests/child-dashboard-contracts.test.py"
-          grep -Fq "versionCode 47" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.17'" "$ROOT/app/build.gradle"
+          test -s "$ROOT/tests/dashboard-context.test.py"
+          test -s "$ROOT/tests/interaction-controls.test.py"
+          test -s "$ROOT/FEATURE_AUDIT_2.1.4.20_AR.md"
+          grep -Fq "versionCode 50" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionName '2.1.4.20'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
@@ -130,8 +141,10 @@ jobs:
           grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
-          grep -Fq "versionCode 47" "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.17'" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 50" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionName '2.1.4.20'" "$ROOT/app/build.gradle"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
           echo "ALISLAH core source preflight passed; no Mixer-TTS models or signing keystore included."
@@ -162,8 +175,11 @@ jobs:
           python3 tests/voice-task-integration.test.py
           python3 tests/native-feature-contracts.test.py
           python3 tests/child-dashboard-contracts.test.py
+          python3 tests/overlay-window-contracts.test.py
+          python3 tests/dashboard-context.test.py
+          python3 tests/interaction-controls.test.py
 
-      - name: Check modified JavaScript syntax
+      - name: Check JavaScript syntax
         working-directory: ALISLAH-Android-v2
         shell: bash
         run: |
@@ -205,9 +221,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.17 core APK
+      - name: Upload ALISLAH 2.1.4.20 core APK
         uses: actions/upload-artifact@v7
         with:
-          name: ALISLAH-2.1.4.17-Core-APK
+          name: ALISLAH-2.1.4.20-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
