@@ -1,0 +1,185 @@
+name: ALISLAH 2.1.4.21 - Release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alislah-release-android
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      EXPECTED_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
+      SOURCE_ZIP: ALISLAH-Android-v2-source-2.1.4.21-complete-controls.zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 34
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Load protected signing key
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ALISLAH_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ALISLAH_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALISLAH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALISLAH_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for item in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!item}" ]]; then
+              echo "::error::Missing required GitHub Actions secret for $item"
+              exit 1
+            fi
+          done
+          KEYSTORE="$RUNNER_TEMP/alislah-release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          {
+            echo "ALISLAH_KEYSTORE_PATH=$KEYSTORE"
+            echo "ALISLAH_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "ALISLAH_KEY_ALIAS=$KEY_ALIAS"
+            echo "ALISLAH_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify the existing update-signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERT="$(keytool -list -v -keystore "$ALISLAH_KEYSTORE_PATH" -storepass "$ALISLAH_KEYSTORE_PASSWORD" -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          if [[ "$CERT" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::Signing certificate mismatch. Refusing to build/publish an APK that may not update the installed app."
+            echo "Expected: $EXPECTED_CERT_SHA256"
+            echo "Actual:   $CERT"
+            exit 1
+          fi
+          echo "The original ALISLAH signing certificate is verified."
+
+      - name: Find and unpack the exact source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find . -maxdepth 3 -type f -name "$SOURCE_ZIP")
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one $SOURCE_ZIP in the repository; found ${#archives[@]}. Upload the source ZIP to the repository root first."
+            exit 1
+          fi
+          unzip -q "${archives[0]}"
+          test -s ALISLAH-Android-v2/app/build.gradle
+          test -s ALISLAH-Android-v2/settings.gradle
+          grep -Fq "versionCode 51" ALISLAH-Android-v2/app/build.gradle
+          grep -Fq "versionName '2.1.4.21'" ALISLAH-Android-v2/app/build.gradle
+
+      - name: Configure signed Release build without changing source archive
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle')
+          s = p.read_text()
+          if 'release {' in s:
+              raise SystemExit('Release buildType already exists; refusing to overwrite it automatically.')
+          old = "\n".join([
+              '    buildTypes {',
+              '        debug {',
+              '            signingConfig signingConfigs.alislah',
+              '        }',
+              '    }'
+          ])
+          new = "\n".join([
+              '    buildTypes {',
+              '        debug {',
+              '            signingConfig signingConfigs.alislah',
+              '        }',
+              '        release {',
+              '            signingConfig signingConfigs.alislah',
+              '            minifyEnabled false',
+              '        }',
+              '    }'
+          ])
+          if old not in s:
+              raise SystemExit('Expected buildTypes block was not found; refusing an unsafe patch.')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Set up Gradle 8.14.3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Run project source tests
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/prayer-calc.test.js
+          node tests/voice-task-parser.test.js
+          node tests/task-planner.test.js
+          node tests/prayer-response.test.js
+          python3 tests/voice-task-integration.test.py
+          python3 tests/native-feature-contracts.test.py
+          python3 tests/child-dashboard-contracts.test.py
+          python3 tests/overlay-window-contracts.test.py
+          python3 tests/dashboard-context.test.py
+          python3 tests/interaction-controls.test.py
+          python3 tests/floating-bubble-recovery.test.py
+          python3 tests/backup-prayer-response.test.py
+          node --check app/src/main/assets/js/main.js
+          node --check app/src/main/assets/js/task-planner.js
+
+      - name: Build signed Release APK
+        working-directory: ALISLAH-Android-v2
+        run: gradle --no-daemon --no-build-cache --stacktrace clean assembleRelease
+
+      - name: Verify APK package, version and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="ALISLAH-Android-v2/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
+          ACTUAL="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
+          if [[ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::Built APK certificate does not match the installed app's certificate. Publishing stopped."
+            exit 1
+          fi
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -F "package: name='dz.alislah.app.allinone' versionCode='51' versionName='2.1.4.21'"
+          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALISLAH-2.1.4.21-release
+          path: ALISLAH-Android-v2/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: alislah-2.1.4.21-build-${{ github.run_number }}
+          name: ALISLAH 2.1.4.21 - Release build ${{ github.run_number }}
+          generate_release_notes: true
+          files: ALISLAH-Android-v2/app/build/outputs/apk/release/app-release.apk
+          fail_on_unmatched_files: true
