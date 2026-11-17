@@ -96,11 +96,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.22-merged.zip' -print)
+          mapfile -t ZIP_FILES < <(
+            find . -maxdepth 5 -type f \( \
+              -name 'ALISLAH-Android-v2-source-2.1.4.22-additive-preserve-all.zip' -o \
+              -name 'ALISLAH-Android-v2-source-2.1.4.22-merged.zip' \
+            \) -print | sort
+          )
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.22-merged.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one 2.1.4.22 source archive (additive-preserve-all or merged), found ${#ZIP_FILES[@]}"
+            printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
             exit 1
           fi
+          echo "Using source archive: ${ZIP_FILES[0]}"
           unzip -q "${ZIP_FILES[0]}"
           ROOT="$PWD/ALISLAH-Android-v2"
           test -s "$ROOT/app/build.gradle"
