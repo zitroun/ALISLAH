@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.21 Core APK (protected signing)
+name: Build ALISLAH 2.1.4.22 Core APK (protected signing)
 
 on:
   workflow_dispatch:
@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
@@ -87,18 +87,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/alislah-gradle-home"
 
       - name: Set up Gradle 8.14.6
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.6'
+          gradle-version: '8.14.3'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.21 source
+      - name: Unpack and preflight ALISLAH 2.1.4.22 source
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.21-complete-controls.zip' -print)
+          mapfile -t ZIP_FILES < <(find . -maxdepth 4 -type f -name 'ALISLAH-Android-v2-source-2.1.4.22-merged.zip' -print)
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.21-complete-controls.zip, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH-Android-v2-source-2.1.4.22-merged.zip, found ${#ZIP_FILES[@]}"
             exit 1
           fi
           unzip -q "${ZIP_FILES[0]}"
@@ -110,6 +110,8 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
           test -s "$ROOT/tests/voice-task-parser.test.js"
+          test -s "$ROOT/tests/gender-address.test.js"
+          test -s "$ROOT/app/src/main/assets/js/gender.js"
           test -s "$ROOT/tests/voice-task-integration.test.py"
           test -s "$ROOT/app/src/main/assets/js/task-planner.js"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerResponseReceiver.kt"
@@ -123,12 +125,14 @@ jobs:
           test -s "$ROOT/tests/interaction-controls.test.py"
           test -s "$ROOT/tests/floating-bubble-recovery.test.py"
           test -s "$ROOT/tests/backup-prayer-response.test.py"
-          test -s "$ROOT/FEATURE_AUDIT_2.1.4.21_AR.md"
-          grep -Fq "versionCode 51" "$ROOT/app/build.gradle"
+          test -s "$ROOT/FEATURE_AUDIT_2.1.4.22_AR.md"
+          grep -Fq "versionCode 52" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.21'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.22'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "addressGender" "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "RETRY_STATUS" "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
@@ -143,10 +147,10 @@ jobs:
           grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
-          grep -Fq "versionCode 51" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 52" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.21'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.22'" "$ROOT/app/build.gradle"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
           echo "ALISLAH core source preflight passed; no Mixer-TTS models or signing keystore included."
@@ -171,6 +175,7 @@ jobs:
         run: |
           set -euo pipefail
           node tests/prayer-calc.test.js
+          node tests/gender-address.test.js
           node tests/voice-task-parser.test.js
           node tests/task-planner.test.js
           node tests/prayer-response.test.js
@@ -223,9 +228,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.21 core APK
-        uses: actions/upload-artifact@v7
+      - name: Upload ALISLAH 2.1.4.22 core APK
+        uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-2.1.4.21-Core-APK
+          name: ALISLAH-2.1.4.22-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
