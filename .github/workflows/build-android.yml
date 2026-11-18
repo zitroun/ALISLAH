@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.22 Core APK (protected signing)
+name: Build ALISLAH 2.1.4.23 Core APK (protected signing)
 
 on:
   workflow_dispatch:
@@ -92,18 +92,17 @@ jobs:
           gradle-version: '8.14.3'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.22 source
+      - name: Unpack and preflight ALISLAH 2.1.4.23 source
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t ZIP_FILES < <(
             find . -maxdepth 5 -type f \( \
-              -name 'ALISLAH-Android-v2-source-2.1.4.22-additive-preserve-all.zip' -o \
-              -name 'ALISLAH-Android-v2-source-2.1.4.22-merged.zip' \
+              -name 'ALISLAH-Android-v2-source-2.1.4.23-additive-preserve-all.zip' \
             \) -print | sort
           )
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one 2.1.4.22 source archive (additive-preserve-all or merged), found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH 2.1.4.23 additive source archive, found ${#ZIP_FILES[@]}"
             printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
             exit 1
           fi
@@ -132,11 +131,16 @@ jobs:
           test -s "$ROOT/tests/interaction-controls.test.py"
           test -s "$ROOT/tests/floating-bubble-recovery.test.py"
           test -s "$ROOT/tests/backup-prayer-response.test.py"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/prayer/PrayerEngine.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/prayer/PrayerPlanner.kt"
+          test -s "$ROOT/app/src/main/assets/js/ics.js"
+          test -s "$ROOT/tests/ics.test.js"
+          test -s "$ROOT/tests/calendar-export-contracts.test.py"
           test -s "$ROOT/FEATURE_AUDIT_2.1.4.22_AR.md"
-          grep -Fq "versionCode 52" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 53" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.22'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.23'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq "addressGender" "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq "RETRY_STATUS" "$ROOT/app/src/main/assets/js/main.js"
@@ -154,10 +158,10 @@ jobs:
           grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
-          grep -Fq "versionCode 52" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 53" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.22'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.23'" "$ROOT/app/build.gradle"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
           echo "ALISLAH core source preflight passed; no Mixer-TTS models or signing keystore included."
@@ -186,6 +190,7 @@ jobs:
           node tests/voice-task-parser.test.js
           node tests/task-planner.test.js
           node tests/prayer-response.test.js
+          node tests/ics.test.js
           python3 tests/voice-task-integration.test.py
           python3 tests/native-feature-contracts.test.py
           python3 tests/child-dashboard-contracts.test.py
@@ -194,6 +199,7 @@ jobs:
           python3 tests/interaction-controls.test.py
           python3 tests/floating-bubble-recovery.test.py
           python3 tests/backup-prayer-response.test.py
+          python3 tests/calendar-export-contracts.test.py
 
       - name: Check JavaScript syntax
         working-directory: ALISLAH-Android-v2
@@ -210,7 +216,7 @@ jobs:
         run: |
           set -euo pipefail
           gradle --version
-          gradle --no-daemon --no-build-cache --stacktrace clean assembleDebug --rerun-tasks
+          gradle --no-daemon --no-build-cache --stacktrace clean testDebugUnitTest assembleDebug --rerun-tasks
 
       - name: Verify APK and report size
         shell: bash
@@ -235,9 +241,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.22 core APK
+      - name: Upload ALISLAH 2.1.4.23 core APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-2.1.4.22-Core-APK
+          name: ALISLAH-2.1.4.23-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
