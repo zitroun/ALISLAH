@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.25 Core APK (protected signing)
+name: Build ALISLAH 2.1.4.26 Core APK (protected signing)
 
 on:
   workflow_dispatch:
@@ -92,17 +92,17 @@ jobs:
           gradle-version: '8.14.3'
           cache-disabled: true
 
-      - name: Unpack and preflight ALISLAH 2.1.4.25 source
+      - name: Unpack and preflight ALISLAH 2.1.4.26 source
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t ZIP_FILES < <(
             find . -maxdepth 5 -type f \( \
-              -name 'ALISLAH-Android-v2-source-2.1.4.25-cloud-features-merged.zip' \
+              -name 'ALISLAH-Android-v2-source-2.1.4.26-test-center.zip' \
             \) -print | sort
           )
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH 2.1.4.25 additive source archive, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one ALISLAH 2.1.4.26 additive source archive, found ${#ZIP_FILES[@]}"
             printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
             exit 1
           fi
@@ -138,6 +138,8 @@ jobs:
           test -s "$ROOT/tests/calendar-export-contracts.test.py"
           test -s "$ROOT/tests/quick-assistant-contracts.test.py"
           test -s "$ROOT/tests/offline-command-router.test.py"
+          test -s "$ROOT/tests/test-center-contracts.test.py"
+          test -s "$ROOT/app/src/main/assets/js/test-center.js"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/OfflineCommandRouter.kt"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/AssistantClient.kt"
           test -s "$ROOT/app/src/main/java/dz/alislah/app/AssistantRules.kt"
@@ -148,15 +150,16 @@ jobs:
           test -s "$ROOT/app/src/test/java/dz/alislah/app/FullscreenRulesTest.kt"
           test -s "$ROOT/app/src/test/java/dz/alislah/app/OfflineCommandRouterTest.kt"
           grep -Fq 'showQuickAsk()' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'testcenter' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'setHideBubbleInFullscreen' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq 'bubbleHideGames' "$ROOT/app/src/main/assets/index.html"
           test -s "$ROOT/FEATURE_AUDIT_2.1.4.22_AR.md"
-          test -s "$ROOT/FEATURE_AUDIT_2.1.4.25_AR.md"
-          test -s "$ROOT/TEST_REPORT_2.1.4.25_AR.md"
-          grep -Fq "versionCode 55" "$ROOT/app/build.gradle"
+          test -s "$ROOT/FEATURE_AUDIT_2.1.4.26_AR.md"
+          test -s "$ROOT/TEST_REPORT_2.1.4.26_AR.md"
+          grep -Fq "versionCode 56" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.25'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
           grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq "addressGender" "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq "RETRY_STATUS" "$ROOT/app/src/main/assets/js/main.js"
@@ -174,10 +177,10 @@ jobs:
           grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
-          grep -Fq "versionCode 55" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 56" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
-          grep -Fq "versionName '2.1.4.25'" "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
           ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
           ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
           test -s "$ROOT/app/src/main/java/dz/alislah/app/ChatBubbleActivity.kt"
@@ -189,14 +192,14 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/BubbleOrbitRules.kt"
           test -s "$ROOT/app/src/test/java/dz/alislah/app/BubbleOrbitRulesTest.kt"
           test -s "$ROOT/app/src/main/res/xml/fullscreen_accessibility.xml"
-          grep -Fq 'versionCode 55' "$ROOT/app/build.gradle"
-          grep -Fq "versionName '2.1.4.25'" "$ROOT/app/build.gradle"
+          grep -Fq 'versionCode 56' "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
           grep -Fq 'bubbleHideFullscreenEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'bubbleLiveCountdownEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'LiveCountdown.refresh(context)' "$ROOT/app/src/main/java/dz/alislah/app/PrayerAlarmReceiver.kt"
           grep -Fq 'BubbleTileService' "$ROOT/app/src/main/AndroidManifest.xml"
           grep -Fq 'ChatBubbleActivity' "$ROOT/app/src/main/AndroidManifest.xml"
-          echo "ALISLAH 2.1.4.25 source preflight passed; no Mixer-TTS models or signing keystore included."
+          echo "ALISLAH 2.1.4.26 source preflight passed; no Mixer-TTS models or signing keystore included."
 
       - name: Verify permanent signing key before building
         shell: bash
@@ -235,6 +238,7 @@ jobs:
           python3 tests/quick-assistant-contracts.test.py
           python3 tests/cloud-feature-integration.test.py
           python3 tests/offline-command-router.test.py
+          python3 tests/test-center-contracts.test.py
 
       - name: Check JavaScript syntax
         working-directory: ALISLAH-Android-v2
@@ -276,9 +280,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.25 core APK
+      - name: Upload ALISLAH 2.1.4.26 core APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-2.1.4.25-Core-APK
+          name: ALISLAH-2.1.4.26-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
