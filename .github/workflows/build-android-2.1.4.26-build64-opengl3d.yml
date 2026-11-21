@@ -1,0 +1,310 @@
+name: Build ALISLAH 2.1.4.26 Build 64 OpenGL 3D (protected signing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
+      ALISLAH_APK_MAX_BYTES: '5000000'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Load the existing signing key from GitHub Actions secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ALISLAH_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ALISLAH_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALISLAH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALISLAH_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              case "$name" in
+                KEYSTORE_BASE64) secret_name="ALISLAH_KEYSTORE_BASE64" ;;
+                KEYSTORE_PASSWORD) secret_name="ALISLAH_KEYSTORE_PASSWORD" ;;
+                KEY_ALIAS) secret_name="ALISLAH_KEY_ALIAS" ;;
+                KEY_PASSWORD) secret_name="ALISLAH_KEY_PASSWORD" ;;
+              esac
+              echo "::error::Missing GitHub Actions secret: $secret_name"
+              echo "Add all four ALISLAH signing secrets before running this workflow."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/alislah-signing.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          printf '%s\n' "ALISLAH_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "Existing ALISLAH signing key loaded from Actions secrets."
+
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT" || { echo "::error::Android SDK not found: $SDK_ROOT"; exit 1; }
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER" || { echo "::error::sdkmanager missing"; exit 1; }
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK 34 components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          LICENSE_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$LICENSE_STATUS" -eq 0 || { echo "::error::Android SDK license acceptance failed"; exit "$LICENSE_STATUS"; }
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Prepare isolated Gradle cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/alislah-gradle-home"
+
+      - name: Set up Gradle 8.14.3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+          cache-disabled: true
+
+      - name: Unpack and preflight ALISLAH 2.1.4.26 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t ZIP_FILES < <(
+            find . -maxdepth 5 -type f \( \
+              -name 'ALISLAH-Android-v2-source-2.1.4.26-build64-opengl3d.zip' \
+            \) -print | sort
+          )
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ALISLAH 2.1.4.26 additive source archive, found ${#ZIP_FILES[@]}"
+            printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
+            exit 1
+          fi
+          echo "Using source archive: ${ZIP_FILES[0]}"
+          unzip -q "${ZIP_FILES[0]}"
+          ROOT="$PWD/ALISLAH-Android-v2"
+          test -s "$ROOT/app/build.gradle"
+          test -s "$ROOT/app/src/main/assets/index.html"
+          test -s "$ROOT/app/src/main/assets/js/main.js"
+          test -s "$ROOT/app/src/main/assets/js/voice-task-parser.js"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/Plasma3DRenderer.kt"
+          test -s "$ROOT/tests/plasma3d-opengl-contracts.test.py"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
+          test -s "$ROOT/tests/voice-task-parser.test.js"
+          test -s "$ROOT/tests/gender-address.test.js"
+          test -s "$ROOT/app/src/main/assets/js/gender.js"
+          test -s "$ROOT/tests/voice-task-integration.test.py"
+          test -s "$ROOT/app/src/main/assets/js/task-planner.js"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/PrayerResponseReceiver.kt"
+          test -s "$ROOT/tests/task-planner.test.js"
+          test -s "$ROOT/tests/prayer-response.test.js"
+          test -s "$ROOT/tests/native-feature-contracts.test.py"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/ChildProtectionService.kt"
+          test -s "$ROOT/app/src/main/assets/js/dashboard.js"
+          test -s "$ROOT/tests/child-dashboard-contracts.test.py"
+          test -s "$ROOT/tests/dashboard-context.test.py"
+          test -s "$ROOT/tests/interaction-controls.test.py"
+          test -s "$ROOT/tests/floating-bubble-recovery.test.py"
+          test -s "$ROOT/tests/backup-prayer-response.test.py"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/prayer/PrayerEngine.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/prayer/PrayerPlanner.kt"
+          test -s "$ROOT/app/src/main/assets/js/ics.js"
+          test -s "$ROOT/tests/ics.test.js"
+          test -s "$ROOT/tests/calendar-export-contracts.test.py"
+          test -s "$ROOT/tests/quick-assistant-contracts.test.py"
+          test -s "$ROOT/tests/offline-command-router.test.py"
+          test -s "$ROOT/tests/test-center-contracts.test.py"
+          test -s "$ROOT/tests/boot-autostart-contracts.test.py"
+          test -s "$ROOT/tests/feature-execution-contracts.test.py"
+          test -s "$ROOT/tests/phases-4-7-regression.test.py"
+          test -s "$ROOT/app/src/main/assets/js/test-center.js"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/OfflineCommandRouter.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/AssistantClient.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/AssistantRules.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/QuickAsk.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/ForegroundTracker.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/FullscreenRules.kt"
+          test -s "$ROOT/app/src/test/java/dz/alislah/app/AssistantRulesTest.kt"
+          test -s "$ROOT/app/src/test/java/dz/alislah/app/FullscreenRulesTest.kt"
+          test -s "$ROOT/app/src/test/java/dz/alislah/app/OfflineCommandRouterTest.kt"
+          grep -Fq 'showQuickAsk()' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'testcenter' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'launchBubbleForTest' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'runFeatureTest' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'ACTION_RESTORE_AFTER_BOOT' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'lastBootRestoreStatus' "$ROOT/app/src/main/java/dz/alislah/app/BackgroundEventsReceiver.kt"
+          grep -Fq 'requestBootRestoreTest' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'lastBootRestoreVerifiedAt' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'Intent.ACTION_BOOT_COMPLETED' "$ROOT/app/src/main/java/dz/alislah/app/BackgroundEventsReceiver.kt"
+          grep -Fq 'setHideBubbleInFullscreen' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'bubbleHideGames' "$ROOT/app/src/main/assets/index.html"
+          test -s "$ROOT/FEATURE_AUDIT_2.1.4.22_AR.md"
+          test -s "$ROOT/FEATURE_AUDIT_2.1.4.26_AR.md"
+          test -s "$ROOT/TEST_REPORT_2.1.4.26_AR.md"
+          grep -Fq "versionCode 64" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          # Build64 replaces legacy Canvas gradients with the OpenGL ES 2.0 renderer.
+          grep -Fq 'class Plasma3DView' "$ROOT/app/src/main/java/dz/alislah/app/Plasma3DRenderer.kt"
+          grep -Fq 'class PlasmaOrbit3DView' "$ROOT/app/src/main/java/dz/alislah/app/Plasma3DRenderer.kt"
+          grep -Fq 'Plasma3DView(context' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          test -s "$ROOT/tests/plasma-bubble-contracts.test.py"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
+          grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "addressGender" "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "RETRY_STATUS" "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
+          grep -Fq 'setAudioAttributes(attrs)' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'assistantStopBubble' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'data.pendingVoiceTask=draft' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'consumePrayerResponsesJson' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'نعم، صليت' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'ليس بعد' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'findPostponeSlot' "$ROOT/app/src/main/assets/js/task-planner.js"
+          grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "versionCode 64" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
+          ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
+          ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/ChatBubbleActivity.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/SystemBubble.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/BubbleTileService.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/LiveCountdown.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/FullscreenWatcherService.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/BubbleHint.kt"
+          test -s "$ROOT/app/src/main/java/dz/alislah/app/BubbleOrbitRules.kt"
+          test -s "$ROOT/app/src/test/java/dz/alislah/app/BubbleOrbitRulesTest.kt"
+          test -s "$ROOT/app/src/main/res/xml/fullscreen_accessibility.xml"
+          grep -Fq 'versionCode 64' "$ROOT/app/build.gradle"
+          grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
+          grep -Fq 'bubbleHideFullscreenEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'bubbleLiveCountdownEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'LiveCountdown.refresh(context)' "$ROOT/app/src/main/java/dz/alislah/app/PrayerAlarmReceiver.kt"
+          grep -Fq 'BubbleTileService' "$ROOT/app/src/main/AndroidManifest.xml"
+          grep -Fq 'ChatBubbleActivity' "$ROOT/app/src/main/AndroidManifest.xml"
+          echo "ALISLAH 2.1.4.26 reboot and interactive test source preflight passed; no Mixer-TTS models or signing keystore included."
+
+      - name: Verify permanent signing key before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$ALISLAH_KEYSTORE_PATH"
+          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$ALISLAH_KEYSTORE_PASSWORD" -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Signing key changed; refusing to build an APK that may not update the installed app."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_KEY_SHA256"
+            exit 1
+          fi
+          echo "ALISLAH signing key verified unchanged."
+
+      - name: Run source tests
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/prayer-calc.test.js
+          node tests/gender-address.test.js
+          node tests/voice-task-parser.test.js
+          node tests/task-planner.test.js
+          node tests/prayer-response.test.js
+          node tests/ics.test.js
+          python3 tests/voice-task-integration.test.py
+          python3 tests/native-feature-contracts.test.py
+          python3 tests/child-dashboard-contracts.test.py
+          python3 tests/overlay-window-contracts.test.py
+          python3 tests/dashboard-context.test.py
+          python3 tests/interaction-controls.test.py
+          python3 tests/floating-bubble-recovery.test.py
+          python3 tests/backup-prayer-response.test.py
+          python3 tests/calendar-export-contracts.test.py
+          python3 tests/quick-assistant-contracts.test.py
+          python3 tests/cloud-feature-integration.test.py
+          python3 tests/offline-command-router.test.py
+          python3 tests/test-center-contracts.test.py
+          python3 tests/boot-autostart-contracts.test.py
+          python3 tests/feature-execution-contracts.test.py
+          python3 tests/phases-4-7-regression.test.py
+          python3 tests/plasma3d-opengl-contracts.test.py
+          python3 tests/plasma-bubble-contracts.test.py
+
+      - name: Check JavaScript syntax
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          find app/src/main/assets/js -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+
+      - name: Build core APK without Flutter
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --version
+          gradle --no-daemon --no-build-cache --stacktrace clean testDebugUnitTest assembleDebug --rerun-tasks
+
+      - name: Verify APK and report size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          SIZE="$(stat -c%s "$APK")"
+          echo "Core APK size: $SIZE bytes"
+          if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
+            echo "::warning::Core APK exceeds the recommended 5 MB target; it will still be published."
+          fi
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
+          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
+          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::APK signing certificate mismatch; artifact will not be published."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_APK_SHA256"
+            exit 1
+          fi
+          echo "Core APK signature verified."
+
+      - name: Upload ALISLAH 2.1.4.26 build 64 core APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALISLAH-2.1.4.26-build64-Core-APK
+          path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
