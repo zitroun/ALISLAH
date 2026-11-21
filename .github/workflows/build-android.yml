@@ -1,4 +1,4 @@
-name: Build ALISLAH 2.1.4.26 Reboot and Interactive Test APK (protected signing)
+name: Build ALISLAH 2.1.4.26 Build 62 Plasma and Zad Repair (protected signing)
 
 on:
   workflow_dispatch:
@@ -98,7 +98,7 @@ jobs:
           set -euo pipefail
           mapfile -t ZIP_FILES < <(
             find . -maxdepth 5 -type f \( \
-              -name 'ALISLAH-Android-v2-source-2.1.4.26-build61-plasma-orbit.zip' \
+              -name 'ALISLAH-Android-v2-source-2.1.4.26-build62-plasma-zad-repair.zip' \
             \) -print | sort
           )
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
@@ -166,7 +166,7 @@ jobs:
           test -s "$ROOT/FEATURE_AUDIT_2.1.4.22_AR.md"
           test -s "$ROOT/FEATURE_AUDIT_2.1.4.26_AR.md"
           test -s "$ROOT/TEST_REPORT_2.1.4.26_AR.md"
-          grep -Fq "versionCode 61" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 62" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'RadialGradient' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
@@ -191,7 +191,7 @@ jobs:
           grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
           grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
-          grep -Fq "versionCode 61" "$ROOT/app/build.gradle"
+          grep -Fq "versionCode 62" "$ROOT/app/build.gradle"
           grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
           grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
@@ -206,7 +206,7 @@ jobs:
           test -s "$ROOT/app/src/main/java/dz/alislah/app/BubbleOrbitRules.kt"
           test -s "$ROOT/app/src/test/java/dz/alislah/app/BubbleOrbitRulesTest.kt"
           test -s "$ROOT/app/src/main/res/xml/fullscreen_accessibility.xml"
-          grep -Fq 'versionCode 61' "$ROOT/app/build.gradle"
+          grep -Fq 'versionCode 62' "$ROOT/app/build.gradle"
           grep -Fq "versionName '2.1.4.26'" "$ROOT/app/build.gradle"
           grep -Fq 'bubbleHideFullscreenEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
           grep -Fq 'bubbleLiveCountdownEnabled' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
@@ -256,6 +256,8 @@ jobs:
           python3 tests/boot-autostart-contracts.test.py
           python3 tests/feature-execution-contracts.test.py
           python3 tests/phases-4-7-regression.test.py
+          python3 tests/plasma-bubble-contracts.test.py
+          python3 tests/plasma-zad-repair.test.py
 
       - name: Check JavaScript syntax
         working-directory: ALISLAH-Android-v2
@@ -297,9 +299,9 @@ jobs:
           fi
           echo "Core APK signature verified."
 
-      - name: Upload ALISLAH 2.1.4.26 build 61 core APK
+      - name: Upload ALISLAH 2.1.4.26 build 62 core APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALISLAH-2.1.4.26-build61-Core-APK
+          name: ALISLAH-2.1.4.26-build62-Core-APK
           path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
