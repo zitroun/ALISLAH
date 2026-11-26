@@ -1,0 +1,253 @@
+name: Build ALISLAH 2.1.4.31 Core APK (protected signing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      ALISLAH_SIGNING_CERT_SHA256: 8DFE30742CE33C5DFC89E1F7928CEAD74F11925A67D653A12BD0141BBF1DB8EE
+      ALISLAH_APK_MAX_BYTES: '5000000'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Load the existing signing key from GitHub Actions secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ALISLAH_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ALISLAH_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALISLAH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ALISLAH_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              case "$name" in
+                KEYSTORE_BASE64) secret_name="ALISLAH_KEYSTORE_BASE64" ;;
+                KEYSTORE_PASSWORD) secret_name="ALISLAH_KEYSTORE_PASSWORD" ;;
+                KEY_ALIAS) secret_name="ALISLAH_KEY_ALIAS" ;;
+                KEY_PASSWORD) secret_name="ALISLAH_KEY_PASSWORD" ;;
+              esac
+              echo "::error::Missing GitHub Actions secret: $secret_name"
+              echo "Add all four ALISLAH signing secrets before running this workflow."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/alislah-signing.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          printf '%s\n' "ALISLAH_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          printf '%s\n' "ALISLAH_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "Existing ALISLAH signing key loaded from Actions secrets."
+
+      - name: Verify the signing key matches the released key
+        shell: bash
+        env:
+          ALISLAH_KEYSTORE_PASSWORD: ${{ secrets.ALISLAH_KEYSTORE_PASSWORD }}
+          ALISLAH_KEY_ALIAS: ${{ secrets.ALISLAH_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          EXPECTED="8D:FE:30:74:2C:E3:3C:5D:FC:89:E1:F7:92:8C:EA:D7:4F:11:92:5A:67:D6:53:A1:2B:D0:14:1B:BF:1D:B8:EE"
+          ACTUAL=$(keytool -list -v -keystore "$ALISLAH_KEYSTORE_PATH" -storepass "$ALISLAH_KEYSTORE_PASSWORD" -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null | grep -m1 "SHA256:" | sed 's/.*SHA256: *//' | tr -d ' ')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Signing key differs from the released key; an update would be refused by Android."
+            echo "expected $EXPECTED"
+            echo "actual   $ACTUAL"
+            exit 1
+          fi
+          echo "Signing key matches the released key."
+
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT" || { echo "::error::Android SDK not found: $SDK_ROOT"; exit 1; }
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER" || { echo "::error::sdkmanager missing"; exit 1; }
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK 34 components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          LICENSE_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$LICENSE_STATUS" -eq 0 || { echo "::error::Android SDK license acceptance failed"; exit "$LICENSE_STATUS"; }
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Prepare isolated Gradle cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/alislah-gradle-home" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/alislah-gradle-home"
+
+      - name: Set up Gradle 8.14.3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+          cache-disabled: true
+
+      - name: Unpack and preflight ALISLAH 2.1.4.31 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t ZIP_FILES < <(
+            find . -maxdepth 5 -type f \( \
+              -name 'ALISLAH-Android-v2-source-2.1.4.31-grouped-eight-bubbles-no-back.zip' \
+            \) -print | sort
+          )
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one ALISLAH 2.1.4.31 grouped-bubbles source archive, found ${#ZIP_FILES[@]}"
+            printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
+            exit 1
+          fi
+          echo "Using source archive: ${ZIP_FILES[0]}"
+          unzip -q "${ZIP_FILES[0]}"
+          ROOT="$PWD/ALISLAH-Android-v2"
+          grep -Fq 'showQuickAsk()' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'setHideBubbleInFullscreen' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'bubbleHideGames' "$ROOT/app/src/main/assets/index.html"
+          grep -Fq "versionCode 69" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionName '2.1.4.31'" "$ROOT/app/build.gradle"
+          grep -Fq 'audioControlMode' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "addressGender" "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "RETRY_STATUS" "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'getAudioControlMode' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioManager.STREAM_MUSIC' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'AudioAttributes.USAGE_MEDIA' "$ROOT/app/src/main/java/dz/alislah/app/PrayerVoiceService.kt"
+          grep -Fq 'setAudioAttributes(attrs)' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'assistantStopBubble' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq 'data.pendingVoiceTask=draft' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'consumePrayerResponsesJson' "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq 'نعم، صليت' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'ليس بعد' "$ROOT/app/src/main/java/dz/alislah/app/PrayerScheduler.kt"
+          grep -Fq 'findPostponeSlot' "$ROOT/app/src/main/assets/js/task-planner.js"
+          grep -Fq 'recordUndo' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq 'quickComplete' "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq '__alislahShowQuickTaskAction' "$ROOT/app/src/main/assets/js/main.js"
+          grep -Fq "versionCode 69" "$ROOT/app/build.gradle"
+          grep -Fq "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS" "$ROOT/app/src/main/java/dz/alislah/app/MainActivity.kt"
+          grep -Fq "bubbleOrbitRadiusDp" "$ROOT/app/src/main/java/dz/alislah/app/FloatingBubbleService.kt"
+          grep -Fq "versionName '2.1.4.31'" "$ROOT/app/build.gradle"
+          ! grep -R -E 'io\.flutter|implementation project\(.flutter.|include_flutter|FlutterEngine|FlutterInjector' "$ROOT/app/src/main" "$ROOT/app/build.gradle" "$ROOT/settings.gradle"
+          ! find "$ROOT/app/src/main" -type f \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
+          echo "ALISLAH core source preflight passed; no Mixer-TTS models or signing keystore included."
+
+      - name: Verify permanent signing key before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$ALISLAH_KEYSTORE_PATH"
+          ACTUAL_KEY_SHA256="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$ALISLAH_KEYSTORE_PASSWORD" -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}')"
+          if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Signing key changed; refusing to build an APK that may not update the installed app."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_KEY_SHA256"
+            exit 1
+          fi
+          echo "ALISLAH signing key verified unchanged."
+
+      - name: Run source tests
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/prayer-calc.test.js
+          node tests/gender-address.test.js
+          node tests/voice-task-parser.test.js
+          node tests/task-planner.test.js
+          node tests/prayer-response.test.js
+          node tests/ics.test.js
+          node tests/zakat-calc.test.js
+          node tests/ramadan.test.js
+          node tests/suggestions.test.js
+          node tests/regularity-map.test.js
+          node tests/friday-reminders.test.js
+          node tests/prayer-anchor.test.js
+          node tests/family-week.test.js
+          node tests/family-sync.test.js
+          node tests/family-sync-worker.test.js
+          python3 tests/voice-task-integration.test.py
+          python3 tests/native-feature-contracts.test.py
+          python3 tests/bubble-groups.test.py
+          python3 tests/child-dashboard-contracts.test.py
+          python3 tests/overlay-window-contracts.test.py
+          python3 tests/dashboard-context.test.py
+          python3 tests/interaction-controls.test.py
+          python3 tests/floating-bubble-recovery.test.py
+          python3 tests/backup-prayer-response.test.py
+          python3 tests/calendar-export-contracts.test.py
+          python3 tests/quick-assistant-contracts.test.py
+          python3 tests/offline-command-router.test.py
+
+      - name: Check JavaScript syntax
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          find app/src/main/assets/js -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+
+      - name: Build core APK without Flutter
+        working-directory: ALISLAH-Android-v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --version
+          gradle --no-daemon --no-build-cache --stacktrace clean testDebugUnitTest assembleDebug assembleRelease --rerun-tasks
+
+      - name: Verify APK and report size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          SIZE="$(stat -c%s "$APK")"
+          echo "Core APK size: $SIZE bytes"
+          if [ "$SIZE" -gt "$ALISLAH_APK_MAX_BYTES" ]; then
+            echo "::warning::Core APK exceeds the recommended 5 MB target; it will still be published."
+          fi
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/alislah-core-signature.txt"
+          ACTUAL_APK_SHA256="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/alislah-core-signature.txt" | head -n 1 | tr -d ':\r\n ' | tr '[:lower:]' '[:upper:]')"
+          if [ "$ACTUAL_APK_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
+            echo "::error::APK signing certificate mismatch; artifact will not be published."
+            echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
+            echo "Actual:   $ACTUAL_APK_SHA256"
+            exit 1
+          fi
+          echo "Core APK signature verified."
+
+      - name: Upload ALISLAH 2.1.4.31 core APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALISLAH-2.1.4.31-Core-APK
+          path: ALISLAH-Android-v2/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
