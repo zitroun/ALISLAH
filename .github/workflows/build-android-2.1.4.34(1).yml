@@ -42,7 +42,6 @@ jobs:
                 KEY_PASSWORD) secret_name="ALISLAH_KEY_PASSWORD" ;;
               esac
               echo "::error::Missing GitHub Actions secret: $secret_name"
-              echo "Add all four ALISLAH signing secrets before running this workflow."
               exit 1
             fi
           done
@@ -58,7 +57,7 @@ jobs:
             echo "ALISLAH_KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
 
-          echo "Existing ALISLAH signing key loaded from Actions secrets."
+          echo "Existing ALISLAH signing key loaded."
 
       - name: Verify the signing key matches the released key
         shell: bash
@@ -76,7 +75,7 @@ jobs:
             grep -m1 "SHA256:" | sed 's/.*SHA256: *//' | tr -d ' ')
 
           if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::Signing key differs from the released key; Android updates would be refused."
+            echo "::error::Signing key differs from the released key."
             echo "expected $EXPECTED"
             echo "actual   $ACTUAL"
             exit 1
@@ -89,12 +88,14 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+
           test -d "$SDK_ROOT" || {
             echo "::error::Android SDK not found: $SDK_ROOT"
             exit 1
           }
 
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
+
           test -n "$SDKMANAGER" || {
             echo "::error::sdkmanager missing"
             exit 1
@@ -103,9 +104,12 @@ jobs:
           {
             echo "ANDROID_HOME=$SDK_ROOT"
             echo "ANDROID_SDK_ROOT=$SDK_ROOT"
+          } >> "$GITHUB_ENV"
+
+          {
             echo "$SDK_ROOT/platform-tools"
             echo "$(dirname "$SDKMANAGER")"
-          } >> "$GITHUB_ENV"
+          } >> "$GITHUB_PATH"
 
       - name: Install Android SDK 34 components
         shell: bash
@@ -154,7 +158,7 @@ jobs:
           )
 
           if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one ALISLAH 2.1.4.34 source archive, found ${#ZIP_FILES[@]}"
+            echo "::error::Expected exactly one source archive, found ${#ZIP_FILES[@]}"
             printf 'Found archive: %s\n' "${ZIP_FILES[@]:-<none>}"
             exit 1
           fi
@@ -173,7 +177,6 @@ jobs:
           if [ "${#PROJECT_FILES[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one Android app/build.gradle, found ${#PROJECT_FILES[@]}"
             printf 'Candidate: %s\n' "${PROJECT_FILES[@]:-<none>}"
-            echo "Archive directory structure:"
             find "$SEARCH_ROOT" -maxdepth 5 -type d -print | head -n 100
             exit 1
           fi
@@ -234,11 +237,7 @@ jobs:
           ! find "$ROOT/app/src/main" -type f \
             \( -name '*.onnx' -o -name '*.tflite' \) | grep -q .
 
-          {
-            echo "ALISLAH_ROOT=$ROOT"
-            echo "ALISLAH_APK_PATH=$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-          } >> "$GITHUB_ENV"
-
+          echo "ALISLAH_APK_PATH=$ROOT/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
 
           echo "ALISLAH core source preflight passed."
@@ -249,18 +248,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          KEYSTORE="$ALISLAH_KEYSTORE_PATH"
-
           ACTUAL_KEY_SHA256="$(
             keytool -list -v \
-              -keystore "$KEYSTORE" \
+              -keystore "$ALISLAH_KEYSTORE_PATH" \
               -storepass "$ALISLAH_KEYSTORE_PASSWORD" \
               -alias "$ALISLAH_KEY_ALIAS" 2>/dev/null |
               awk -F': ' '/SHA256:/{gsub(":", "", $2); print toupper($2); exit}'
           )"
 
           if [ "$ACTUAL_KEY_SHA256" != "$ALISLAH_SIGNING_CERT_SHA256" ]; then
-            echo "::error::Signing key changed; refusing to build an APK that may not update the installed app."
+            echo "::error::Signing key changed; refusing to build."
             echo "Expected: $ALISLAH_SIGNING_CERT_SHA256"
             echo "Actual:   $ACTUAL_KEY_SHA256"
             exit 1
@@ -332,7 +329,6 @@ jobs:
           set -euo pipefail
 
           APK="$ALISLAH_APK_PATH"
-
           test -s "$APK"
 
           SIZE="$(stat -c%s "$APK")"
